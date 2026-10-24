@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PiercingDistributionTool.Core")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+6832f2de1ced3757b32c99cdb83c3e118fde60cf")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2227fc099b7e8bbe090eab093963554939cdf4d3")]
 [assembly: System.Reflection.AssemblyProductAttribute("PiercingDistributionTool.Core")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PiercingDistributionTool.Core")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

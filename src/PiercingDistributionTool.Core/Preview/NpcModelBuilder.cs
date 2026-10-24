@@ -389,6 +389,23 @@ public sealed class NpcModelBuilder
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 
+    /// <summary>
+    /// SMP/HDT physics ships collision proxies in hair and body meshes ("VirtualHead", "VirtualBody"
+    /// and the like): hidden or untextured shapes the game never draws, which would show up white.
+    /// </summary>
+    private static bool IsPhysicsOrHidden(NifFile nif, NiShape shape)
+    {
+        if ((shape.flags & 1) != 0) return true; // NiAVObject "hidden"
+        var name = shape.name.get() ?? "";
+        if (name.StartsWith("Virtual", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("collision", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("proxy", StringComparison.OrdinalIgnoreCase)) return true;
+        if (nif.GetShader(shape) == null) return true;
+        string? diffuse = null;
+        try { diffuse = nif.GetTexturePathByIndex(shape, 0); } catch { }
+        return string.IsNullOrWhiteSpace(diffuse);
+    }
+
     private static bool IsOrigin(MatTransform t) =>
         Math.Abs(t.translation.x) + Math.Abs(t.translation.y) + Math.Abs(t.translation.z) < 0.001f;
 
@@ -424,6 +441,7 @@ public sealed class NpcModelBuilder
 
     private MeshPart? ReadShape(NifFile nif, NiShape shape, string label, bool isPiercing, string? skinDiffuse, vectorVector3? thinVerts)
     {
+        if (IsPhysicsOrHidden(nif, shape)) return null;
         var verts = nif.GetVertsForShape(shape);
         if (verts == null || verts.Count == 0) return null;
         if (thinVerts != null && thinVerts.Count != verts.Count) thinVerts = null;
