@@ -29,10 +29,40 @@ public sealed class GameSession : IDisposable
     public static GameSession Open(string? dataFolder, ModKey ownPatch)
     {
         var builder = GameEnvironment.Typical.Builder<ISkyrimMod, ISkyrimModGetter>(GameRelease.SkyrimSE)
-            .TransformLoadOrderListings(l => l.Where(x => x.ModKey != ownPatch));
+            // Only ticked plugins load in game; unticked ones would otherwise win conflicts here.
+            .TransformLoadOrderListings(l => l.Where(x => x.Enabled && x.ModKey != ownPatch));
+        if (string.IsNullOrWhiteSpace(dataFolder)) dataFolder = Mo2DataFolder();
         if (!string.IsNullOrWhiteSpace(dataFolder))
             builder = builder.WithTargetDataFolder(dataFolder);
         return new GameSession(builder.Build(), ownPatch);
+    }
+
+    /// <summary>
+    /// When MO2 launched us, its virtual Data folder sits over the game folder MO2 manages (often a
+    /// "Stock Game" copy), which Steam's registry entry doesn't know about. MO2 injects its usvfs DLL
+    /// from its own folder, and a portable instance keeps ModOrganizer.ini beside it, naming gamePath.
+    /// </summary>
+    public static string? Mo2DataFolder()
+    {
+        try
+        {
+            var usvfs = System.Diagnostics.Process.GetCurrentProcess().Modules.Cast<System.Diagnostics.ProcessModule>()
+                .FirstOrDefault(m => m.ModuleName.StartsWith("usvfs_x64", StringComparison.OrdinalIgnoreCase));
+            if (usvfs?.FileName is not { } dll) return null;
+            var ini = Path.Combine(Path.GetDirectoryName(dll)!, "ModOrganizer.ini");
+            if (!File.Exists(ini)) return null;
+            var line = File.ReadLines(ini).FirstOrDefault(l => l.StartsWith("gamePath=", StringComparison.OrdinalIgnoreCase));
+            if (line == null) return null;
+            var value = line["gamePath=".Length..].Trim();
+            if (value.StartsWith("@ByteArray(") && value.EndsWith(")")) value = value[11..^1];
+            value = value.Replace(@"\\", @"\");
+            var data = Path.Combine(value, "Data");
+            return Directory.Exists(data) ? data : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public IEnumerable<INpcGetter> WinningNpcs() =>
