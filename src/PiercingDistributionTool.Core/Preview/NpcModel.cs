@@ -19,4 +19,6 @@ public sealed class NpcModel
 {
     public List<MeshPart> Parts { get; } = new();
     public List<string> Missing { get; } = new();
+    /// <summary>Piercing meshes that aren't there, usually BodySlide outputs nobody has built yet.</summary>
+    public List<string> MissingPiercings { get; } = new();
 }

@@ -109,7 +109,13 @@ public sealed class NpcModelBuilder
         if (skinSet != null && !skinSet.IsNull && _cache.TryResolve<ITextureSetGetter>(skinSet.FormKey, out var textureSet))
             skinDiffuse = TexturePath(textureSet.Diffuse?.DataRelativePath.Path);
 
+        var before = model.Missing.Count;
         AddMesh(model, path, addon.EditorID ?? key.ToString(), isPiercing, skinDiffuse);
+        if (isPiercing && model.Missing.Count > before)
+        {
+            model.MissingPiercings.AddRange(model.Missing.Skip(before));
+            model.Missing.RemoveRange(before, model.Missing.Count - before);
+        }
     }
 
     /// <summary>

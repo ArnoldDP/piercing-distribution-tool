@@ -184,6 +184,10 @@ public partial class MainWindow : Window
                        + (row.Npc.SkinFromRace ? " (from race)" : " (WNAM)")
                        + $" · winning record from {row.Npc.WinningPlugin}";
             if (row.Npc.SkipReason != null) info += $"\nSkipped: {row.Npc.SkipReason}.";
+            if (model.MissingPiercings.Count > 0)
+                info += $"\n{model.MissingPiercings.Count} piercing mesh(es) don't exist, so they won't show here or in game. "
+                        + "If the piercing mod has a BodySlide project, build it in BodySlide first: "
+                        + string.Join(", ", model.MissingPiercings.Take(3));
             if (model.Missing.Count > 0) info += "\nNot found: " + string.Join(", ", model.Missing.Take(4));
             var unreadable = model.Parts.Where(p => p.DiffusePath != null && _textures.Load(p.DiffusePath) == null)
                 .Select(p => $"{p.Name} ({p.DiffusePath})").Distinct().Take(4).ToList();
