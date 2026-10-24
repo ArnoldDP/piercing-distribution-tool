@@ -46,7 +46,36 @@ public sealed class NpcModelBuilder
             foreach (var addon in piercings.ArmorAddons)
                 AddAddon(model, FormKey.Factory(addon), npc, isPiercing: true, ignoreRace: true);
 
+        WeldSeams(model);
         return model;
+    }
+
+    /// <summary>
+    /// Head and body are separate meshes whose edges share positions. Computed normals at those
+    /// edges only see one side, which draws a line at the neck and wrists; averaging the normals of
+    /// coincident vertices across parts removes it, as the game's matched normals do.
+    /// </summary>
+    private static void WeldSeams(NpcModel model)
+    {
+        var parts = model.Parts.Where(p => p.NormalsComputed).ToList();
+        var sums = new Dictionary<(int, int, int), (float X, float Y, float Z)>();
+        static (int, int, int) Key(float[] p, int i) =>
+            ((int)MathF.Round(p[i] * 50), (int)MathF.Round(p[i + 1] * 50), (int)MathF.Round(p[i + 2] * 50));
+        foreach (var part in parts)
+            for (var i = 0; i + 2 < part.Positions.Length; i += 3)
+            {
+                var k = Key(part.Positions, i);
+                sums.TryGetValue(k, out var acc);
+                sums[k] = (acc.X + part.Normals[i], acc.Y + part.Normals[i + 1], acc.Z + part.Normals[i + 2]);
+            }
+        foreach (var part in parts)
+            for (var i = 0; i + 2 < part.Positions.Length; i += 3)
+            {
+                var n = sums[Key(part.Positions, i)];
+                var len = MathF.Sqrt(n.X * n.X + n.Y * n.Y + n.Z * n.Z);
+                if (len <= 0) continue;
+                part.Normals[i] = n.X / len; part.Normals[i + 1] = n.Y / len; part.Normals[i + 2] = n.Z / len;
+            }
     }
 
     private void AddAddon(NpcModel model, FormKey key, NpcEntry npc, bool isPiercing, bool ignoreRace = false)
@@ -189,6 +218,18 @@ public sealed class NpcModelBuilder
         }
     }
 
+    /// <summary>
+    /// A skin texture set only stands in for the ordinary body, hand, foot and head textures. Extra
+    /// skin shapes with textures of their own (a body's separate genital mesh, say) keep theirs.
+    /// </summary>
+    private static bool IsStandardSkinTexture(string? path)
+    {
+        if (path == null) return true;
+        var name = Path.GetFileNameWithoutExtension(path);
+        return System.Text.RegularExpressions.Regex.IsMatch(name, @"^(fe)?male(body|hands|feet|head)(_\d+)?$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    }
+
     private static bool IsOrigin(MatTransform t) =>
         Math.Abs(t.translation.x) + Math.Abs(t.translation.y) + Math.Abs(t.translation.z) < 0.001f;
 
@@ -196,11 +237,11 @@ public sealed class NpcModelBuilder
     /// Skin and head meshes using model-space normal maps store no vertex normals, so they are
     /// rebuilt from the triangles for the preview's lighting.
     /// </summary>
-    private static void FillMissingNormals(float[] pos, float[] nrm, uint[] idx)
+    private static bool FillMissingNormals(float[] pos, float[] nrm, uint[] idx)
     {
         var any = false;
         for (var i = 0; i < nrm.Length && !any; i++) any = nrm[i] != 0;
-        if (any) return;
+        if (any) return false;
         for (var t = 0; t + 2 < idx.Length; t += 3)
         {
             int a = (int)idx[t] * 3, b = (int)idx[t + 1] * 3, c = (int)idx[t + 2] * 3;
@@ -219,6 +260,7 @@ public sealed class NpcModelBuilder
             if (len > 0) { nrm[i] /= len; nrm[i + 1] /= len; nrm[i + 2] /= len; }
             else nrm[i + 2] = 1;
         }
+        return true;
     }
 
     private static MeshPart? ReadShape(NifFile nif, NifFile? skeleton, NiShape shape, string label, bool isPiercing, string? skinDiffuse)
@@ -259,12 +301,13 @@ public sealed class NpcModelBuilder
             idx[i * 3] = tris[i].p1; idx[i * 3 + 1] = tris[i].p2; idx[i * 3 + 2] = tris[i].p3;
         }
 
-        FillMissingNormals(pos, nrm, idx);
+        var computed = FillMissingNormals(pos, nrm, idx);
 
         string? diffuse = null;
         try { diffuse = nif.GetTexturePathByIndex(shape, 0); } catch { }
         diffuse = TexturePath(diffuse);
-        if (skinDiffuse != null && IsSkinShader(nif, shape)) diffuse = skinDiffuse;
+        if (skinDiffuse != null && IsSkinShader(nif, shape) && IsStandardSkinTexture(diffuse)) diffuse = skinDiffuse;
+        var alphaTest = nif.GetAlphaProperty(shape) != null;
 
         return new MeshPart
         {
@@ -272,6 +315,8 @@ public sealed class NpcModelBuilder
             Positions = pos, Normals = nrm, Uvs = uv, Indices = idx,
             DiffusePath = string.IsNullOrWhiteSpace(diffuse) ? null : diffuse,
             IsPiercing = isPiercing,
+            AlphaTest = alphaTest,
+            NormalsComputed = computed,
         };
     }
 }
