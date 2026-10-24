@@ -1,0 +1,145 @@
+﻿<Window x:Class="PiercingDistributionTool.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:preview="clr-namespace:PiercingDistributionTool.Preview"
+        Title="Piercing distribution tool" Height="860" Width="1500" MinWidth="1100" MinHeight="640">
+    <DockPanel>
+        <!-- Load bar -->
+        <Border DockPanel.Dock="Top" Padding="8" BorderBrush="#33000000" BorderThickness="0,0,0,1">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Load game" Padding="14,4" Click="OnLoadClick" x:Name="LoadButton"/>
+                <Button DockPanel.Dock="Right" Content="Browse…" Margin="6,0" Padding="10,4" Click="OnBrowseDataClick"/>
+                <TextBlock VerticalAlignment="Center" Text="Data folder (blank = auto-detect):" Margin="0,0,8,0"/>
+                <TextBox x:Name="DataFolderBox" VerticalContentAlignment="Center"/>
+            </DockPanel>
+        </Border>
+
+        <!-- Status bar -->
+        <Border DockPanel.Dock="Bottom" Padding="8,4" BorderBrush="#33000000" BorderThickness="0,1,0,0">
+            <TextBlock x:Name="StatusText" TextWrapping="Wrap"
+                       Text="Load your game to begin. Launch this tool from Mod Organizer 2 so it sees your mods."/>
+        </Border>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="320"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="380"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- NPC list -->
+            <DockPanel Grid.Column="0" Margin="8">
+                <TextBlock DockPanel.Dock="Top" Text="NPCs" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <TextBox DockPanel.Dock="Top" x:Name="NpcSearch" TextChanged="OnNpcFilterChanged" Margin="0,0,0,4"
+                         ToolTip="Search by name, EditorID or race"/>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
+                    <ComboBox x:Name="GenderFilterBox" Width="90" SelectedIndex="0" SelectionChanged="OnNpcFilterChanged">
+                        <ComboBoxItem Content="Any sex"/>
+                        <ComboBoxItem Content="Female"/>
+                        <ComboBoxItem Content="Male"/>
+                    </ComboBox>
+                    <CheckBox x:Name="AssignedOnlyBox" Content="Assigned only" Margin="10,0,0,0" VerticalAlignment="Center"
+                              Checked="OnNpcFilterChanged" Unchecked="OnNpcFilterChanged"/>
+                </StackPanel>
+                <TextBlock DockPanel.Dock="Bottom" x:Name="NpcCountText" Margin="0,4,0,0" Foreground="Gray"/>
+                <ListBox x:Name="NpcList" SelectionChanged="OnNpcSelected"
+                         VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock Text="{Binding Display}"/>
+                                <TextBlock Text="{Binding Detail}" Foreground="Gray" FontSize="11"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <!-- Preview -->
+            <DockPanel Grid.Column="1" Margin="0,8">
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                    <CheckBox x:Name="ShowPiercingsBox" Content="Show piercings" IsChecked="True" VerticalAlignment="Center"
+                              Checked="OnShowPiercingsChanged" Unchecked="OnShowPiercingsChanged"/>
+                    <TextBlock Text="Preview set:" Margin="16,0,6,0" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="PreviewSetBox" Width="200" SelectionChanged="OnPreviewSetChanged"
+                              ToolTip="Which set to show on this NPC. Defaults to the one the rules assign."/>
+                </StackPanel>
+                <TextBlock DockPanel.Dock="Bottom" x:Name="PreviewInfo" Foreground="Gray" TextWrapping="Wrap" Margin="0,6,0,0"
+                           Text="Drag to rotate, right-drag to move up and down, scroll to zoom."/>
+                <preview:PreviewView x:Name="Preview"/>
+            </DockPanel>
+
+            <!-- Sets and rules -->
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="8">
+                    <TextBlock Text="Piercing sets" FontWeight="SemiBold"/>
+                    <DockPanel Margin="0,4">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Vertical" Margin="6,0,0,0">
+                            <Button Content="Add" Click="OnAddSet" Margin="0,0,0,4"/>
+                            <Button Content="Remove" Click="OnRemoveSet" Margin="0,0,0,4"/>
+                            <Button Content="Import…" Click="OnImportPreset" Margin="0,0,0,4"/>
+                            <Button Content="Export…" Click="OnExportPreset"/>
+                        </StackPanel>
+                        <ListBox x:Name="SetList" Height="120" DisplayMemberPath="Name" SelectionChanged="OnSetSelected"/>
+                    </DockPanel>
+
+                    <GroupBox Header="Selected set" Margin="0,6" x:Name="SetEditor" IsEnabled="False">
+                        <StackPanel Margin="4">
+                            <TextBlock Text="Name"/>
+                            <TextBox x:Name="SetNameBox" LostFocus="OnSetFieldChanged"/>
+                            <TextBlock Text="Sex" Margin="0,6,0,0"/>
+                            <ComboBox x:Name="SetGenderBox" SelectionChanged="OnSetFieldChanged">
+                                <ComboBoxItem Content="Any"/>
+                                <ComboBoxItem Content="Female"/>
+                                <ComboBoxItem Content="Male"/>
+                            </ComboBox>
+                            <TextBlock Text="Races (EditorIDs, comma separated; blank = any)" Margin="0,6,0,0"/>
+                            <TextBox x:Name="SetRacesBox" LostFocus="OnSetFieldChanged"/>
+                            <TextBlock Text="Weight" Margin="0,6,0,0"/>
+                            <TextBox x:Name="SetWeightBox" LostFocus="OnSetFieldChanged"/>
+                            <TextBlock Text="Armor addons in this set" Margin="0,6,0,0"/>
+                            <ListBox x:Name="SetAddonList" Height="90"/>
+                            <Button Content="Remove selected addon" Click="OnRemoveAddon" Margin="0,4,0,0"/>
+                            <TextBlock Text="Find armor addons to add" Margin="0,8,0,0"/>
+                            <TextBox x:Name="AddonSearch" TextChanged="OnAddonSearchChanged"
+                                     ToolTip="Type part of an EditorID, mesh path or plugin name"/>
+                            <ListBox x:Name="AddonResults" Height="120" Margin="0,4,0,0" MouseDoubleClick="OnAddAddon"/>
+                            <Button Content="Add selected addon" Click="OnAddAddon" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Who gets piercings" Margin="0,6">
+                        <StackPanel Margin="4">
+                            <TextBlock x:Name="ChanceLabel" Text="Chance: 30%"/>
+                            <Slider x:Name="ChanceSlider" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True"
+                                    ValueChanged="OnRulesChanged"/>
+                            <CheckBox x:Name="UniqueBox" Content="Named (unique) NPCs" Margin="0,4,0,0"
+                                      Checked="OnRulesChanged" Unchecked="OnRulesChanged"/>
+                            <CheckBox x:Name="GenericBox" Content="Generic NPCs" Margin="0,2,0,0"
+                                      Checked="OnRulesChanged" Unchecked="OnRulesChanged"/>
+                            <DockPanel Margin="0,6,0,0">
+                                <Button DockPanel.Dock="Right" Content="Reshuffle" Click="OnReshuffle" Padding="8,0"/>
+                                <TextBlock x:Name="SeedLabel" VerticalAlignment="Center" Text="Seed: 1"/>
+                            </DockPanel>
+                            <TextBlock Text="This NPC" Margin="0,8,0,0" FontWeight="SemiBold"/>
+                            <ComboBox x:Name="NpcOverrideBox" SelectionChanged="OnNpcOverrideChanged"
+                                      ToolTip="Force a set (or none) for the selected NPC, ignoring the chance roll"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Output" Margin="0,6">
+                        <StackPanel Margin="4">
+                            <TextBlock Text="Plugin name"/>
+                            <TextBox x:Name="OutputNameBox" LostFocus="OnOutputChanged"/>
+                            <TextBlock Text="Folder (blank = Data folder, which lands in MO2's overwrite)" Margin="0,6,0,0"
+                                       TextWrapping="Wrap"/>
+                            <TextBox x:Name="OutputFolderBox" LostFocus="OnOutputChanged"/>
+                            <Button Content="Write patch" Margin="0,10,0,0" Padding="0,6" FontWeight="SemiBold"
+                                    Click="OnWritePatch" x:Name="WriteButton" IsEnabled="False"/>
+                        </StackPanel>
+                    </GroupBox>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </DockPanel>
+</Window>
