@@ -172,6 +172,9 @@ public partial class MainWindow : Window
                        + $" · winning record from {row.Npc.WinningPlugin}";
             if (row.Npc.SkipReason != null) info += $"\nSkipped: {row.Npc.SkipReason}.";
             if (model.Missing.Count > 0) info += "\nNot found: " + string.Join(", ", model.Missing.Take(4));
+            var unreadable = model.Parts.Where(p => p.DiffusePath != null && _textures.Load(p.DiffusePath) == null)
+                .Select(p => $"{p.Name} ({p.DiffusePath})").Distinct().Take(4).ToList();
+            if (unreadable.Count > 0) info += "\nTextures that couldn't be read (drawn grey): " + string.Join(", ", unreadable);
             PreviewInfo.Text = info;
         }
         catch (Exception ex)
