@@ -63,6 +63,7 @@ public partial class MainWindow : Window
             WriteButton.IsEnabled = true;
             Recompute();
             RefreshSetAddons();
+            RefreshPluginList();
             OnRecordSearchChanged(this, e);
             Status($"Loaded {session.LoadOrder.Count} plugins and {npcs.Count} NPCs from {session.DataFolder}.");
         }
@@ -266,18 +267,58 @@ public partial class MainWindow : Window
         if (!IsLoaded) return;
         var q = RecordSearch.Text.Trim();
         var kind = RecordKindBox.SelectedIndex; // 0 armor, 1 addon, 2 both
-        if (_records.Count == 0 || q.Length < 2)
+        var plugin = SelectedPlugin;
+        if (_records.Count == 0 || (plugin == null && q.Length < 2))
         {
             RecordResults.ItemsSource = null;
-            RecordCountText.Text = _records.Count == 0 ? "Load your game first." : "Type at least two letters.";
+            RecordCountText.Text = _records.Count == 0 ? "Load your game first." : "Pick a plugin, or type at least two letters.";
             return;
         }
         var hits = _records
+            .Where(r => plugin == null || r.Key.ModKey == plugin)
             .Where(r => kind == 2 || (kind == 1) == r.IsAddon)
-            .Where(r => r.Matches(q))
+            .Where(r => q.Length == 0 || r.Matches(q))
+            .OrderBy(r => r.EditorId, StringComparer.OrdinalIgnoreCase)
             .ToList();
         RecordResults.ItemsSource = hits.Take(500).ToList();
         RecordCountText.Text = hits.Count > 500 ? $"{hits.Count} matches, first 500 shown" : $"{hits.Count} matches";
+    }
+
+    private const string AllPlugins = "(all plugins)";
+    private List<string> _pluginNames = new();
+
+    private ModKey? SelectedPlugin =>
+        PluginBox.SelectedItem is string s && s != AllPlugins ? ModKey.FromFileName(s) : null;
+
+    /// <summary>Plugins that define at least one armor or armor addon, for the plugin picker.</summary>
+    private void RefreshPluginList()
+    {
+        _pluginNames = _records.Select(r => r.Key.ModKey.FileName.String).Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+        PluginBox.ItemsSource = new[] { AllPlugins }.Concat(_pluginNames).ToList();
+        PluginBox.SelectedIndex = 0;
+    }
+
+    /// <summary>Typing in the picker narrows its list to matching plugin names.</summary>
+    private void OnPluginBoxKeyUp(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key is System.Windows.Input.Key.Enter or System.Windows.Input.Key.Up or System.Windows.Input.Key.Down) return;
+        var text = PluginBox.Text;
+        if (PluginBox.SelectedItem is string chosen && chosen == text) return;
+        var matches = _pluginNames.Where(n => n.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList();
+        _syncing = true;
+        PluginBox.ItemsSource = new[] { AllPlugins }.Concat(matches).ToList();
+        PluginBox.SelectedItem = null;
+        PluginBox.Text = text;
+        if (PluginBox.Template.FindName("PART_EditableTextBox", PluginBox) is TextBox box) box.CaretIndex = text.Length;
+        PluginBox.IsDropDownOpen = true;
+        _syncing = false;
+    }
+
+    private void OnPluginChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncing || PluginBox.SelectedItem == null) return;
+        OnRecordSearchChanged(sender, e);
     }
 
     /// <summary>Adds the picked record to the selected set; an armor brings all of its addons.</summary>

@@ -104,6 +104,11 @@
 
                     <GroupBox Header="Find piercings in your load order" Margin="0,6">
                         <StackPanel Margin="4">
+                            <TextBlock Text="Plugin (type to search, pick one to list everything in it)"/>
+                            <ComboBox x:Name="PluginBox" IsEditable="True" IsTextSearchEnabled="False" Margin="0,2,0,6"
+                                      StaysOpenOnEdit="True" KeyUp="OnPluginBoxKeyUp" SelectionChanged="OnPluginChanged"
+                                      ToolTip="Only plugins that define armor or armor addons are listed"/>
+                            <TextBlock Text="Records"/>
                             <DockPanel>
                                 <ComboBox DockPanel.Dock="Right" x:Name="RecordKindBox" Width="110" Margin="6,0,0,0" SelectedIndex="0"
                                           SelectionChanged="OnRecordSearchChanged">
