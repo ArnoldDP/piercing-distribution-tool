@@ -71,7 +71,9 @@ public static class PatchWriter
         IArmorAddonGetter? addon = overrides.TryGetValue(addonKey, out var existing) ? existing
             : cache.TryResolve<IArmorAddonGetter>(addonKey, out var resolved) ? resolved : null;
         if (addon == null) return;
-        if (addon.Race.FormKey == raceKey || addon.AdditionalRaces.Any(r => r.FormKey == raceKey)) return;
+        if (Fits(addon, raceKey)) return;
+        // Races wear armour as their armour race (Nords as the Default race), so that counts too.
+        if (cache.TryResolve<IRaceGetter>(raceKey, out var race) && !race.ArmorRace.IsNull && Fits(addon, race.ArmorRace.FormKey)) return;
 
         if (existing == null)
         {
@@ -80,6 +82,9 @@ public static class PatchWriter
         }
         existing.AdditionalRaces.Add(raceKey);
     }
+
+    private static bool Fits(IArmorAddonGetter addon, FormKey raceKey) =>
+        addon.Race.FormKey == raceKey || addon.AdditionalRaces.Any(r => r.FormKey == raceKey);
 
     private static string EditorIdFor(IArmorGetter baseSkin, PiercingSet set)
     {

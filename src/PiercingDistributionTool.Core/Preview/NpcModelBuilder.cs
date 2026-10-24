@@ -22,6 +22,7 @@ public sealed class NpcModelBuilder
     private readonly Dictionary<string, MatTransform> _boneGlobals = new();
     private float[]? _hairTint;
     private float _weight = 1f;
+    private FormKey? _armorRace;
 
     public NpcModelBuilder(GameSession session, AssetResolver assets)
     {
@@ -37,6 +38,7 @@ public sealed class NpcModelBuilder
         _skeleton = SkeletonFor(npc);
         _boneGlobals.Clear();
         _hairTint = HairTintFor(npc);
+        _armorRace = _cache.TryResolve<IRaceGetter>(npc.RaceKey, out var race) && !race.ArmorRace.IsNull ? race.ArmorRace.FormKey : null;
         _weight = _cache.TryResolve<INpcGetter>(npc.FormKey, out var record) ? Math.Clamp(record.Weight / 100f, 0f, 1f) : 1f;
 
         if (npc.SkinKey is { } skinKey && _cache.TryResolve<IArmorGetter>(skinKey, out var skin))
@@ -91,7 +93,7 @@ public sealed class NpcModelBuilder
             model.Missing.Add($"armor addon {key}");
             return;
         }
-        if (!ignoreRace && addon.Race.FormKey != npc.RaceKey && addon.AdditionalRaces.All(r => r.FormKey != npc.RaceKey))
+        if (!ignoreRace && !Fits(addon, npc.RaceKey) && (_armorRace is not { } armorRace || !Fits(addon, armorRace)))
             return;
 
         var gendered = addon.WorldModel;
@@ -154,12 +156,13 @@ public sealed class NpcModelBuilder
 
     private void AddMesh(NpcModel model, string relativePath, string label, bool isPiercing, string? skinDiffuse = null)
     {
-        using var nif = LoadNif(relativePath, model, report: true);
-        if (nif == null) return;
-
         // The game blends each weighted mesh between its _0 (thin) and _1 (heavy) files by the NPC's
         // weight; FaceGen heads are baked at that weight, so an unblended body leaves a gap at the neck.
-        using var thin = WeightPartner(relativePath) is { } thinPath && _weight < 1f ? LoadNif(thinPath, model, report: false) : null;
+        var pair = WeightPair(relativePath);
+        using var nif = LoadNif(pair?.Heavy ?? relativePath, model, report: pair == null)
+                        ?? (pair != null ? LoadNif(relativePath, model, report: true) : null);
+        if (nif == null) return;
+        using var thin = pair is { } p && _weight < 1f ? LoadNif(p.Thin, model, report: false) : null;
 
         foreach (var shape in nif.GetShapes())
         {
@@ -170,9 +173,16 @@ public sealed class NpcModelBuilder
         }
     }
 
-    /// <summary>For "..._1.nif" the thin partner "..._0.nif"; other meshes have none.</summary>
-    private static string? WeightPartner(string path) =>
-        path.EndsWith("_1.nif", StringComparison.OrdinalIgnoreCase) ? path[..^6] + "_0.nif" : null;
+    private static bool Fits(IArmorAddonGetter addon, FormKey raceKey) =>
+        addon.Race.FormKey == raceKey || addon.AdditionalRaces.Any(r => r.FormKey == raceKey);
+
+    /// <summary>Addons may name either file of a weighted pair; returns (heavy _1, thin _0), or null for unweighted meshes.</summary>
+    private static (string Heavy, string Thin)? WeightPair(string path)
+    {
+        if (path.EndsWith("_1.nif", StringComparison.OrdinalIgnoreCase)) return (path, path[..^6] + "_0.nif");
+        if (path.EndsWith("_0.nif", StringComparison.OrdinalIgnoreCase)) return (path[..^6] + "_1.nif", path);
+        return null;
+    }
 
     private NifFile? LoadNif(string relativePath, NpcModel model, bool report)
     {
