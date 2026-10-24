@@ -65,7 +65,14 @@ public sealed class NpcModelBuilder
         if (string.IsNullOrEmpty(file)) return;
 
         var path = file.StartsWith("meshes", StringComparison.OrdinalIgnoreCase) ? file : Path.Combine("meshes", file);
-        AddMesh(model, path, addon.EditorID ?? key.ToString(), isPiercing);
+        // An addon's skin texture set replaces the mesh's own textures on its skin shapes, which is
+        // how racial and custom skins retexture a shared body mesh.
+        string? skinDiffuse = null;
+        var skinSet = npc.IsFemale ? addon.SkinTexture?.Female : addon.SkinTexture?.Male;
+        if (skinSet != null && !skinSet.IsNull && _cache.TryResolve<ITextureSetGetter>(skinSet.FormKey, out var textureSet))
+            skinDiffuse = TexturePath(textureSet.Diffuse?.DataRelativePath.Path);
+
+        AddMesh(model, path, addon.EditorID ?? key.ToString(), isPiercing, skinDiffuse);
     }
 
     /// <summary>
@@ -104,7 +111,13 @@ public sealed class NpcModelBuilder
     private static string FaceGenPath(FormKey npc) =>
         $@"meshes\actors\character\facegendata\facegeom\{npc.ModKey.FileName}\{npc.ID:X8}.nif";
 
-    private void AddMesh(NpcModel model, string relativePath, string label, bool isPiercing)
+    private static string? TexturePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        return path.StartsWith("textures", StringComparison.OrdinalIgnoreCase) ? path : Path.Combine("textures", path);
+    }
+
+    private void AddMesh(NpcModel model, string relativePath, string label, bool isPiercing, string? skinDiffuse = null)
     {
         var bytes = _assets.Read(relativePath);
         if (bytes == null)
@@ -126,7 +139,7 @@ public sealed class NpcModelBuilder
             }
             foreach (var shape in nif.GetShapes())
             {
-                var part = ReadShape(nif, _skeleton, shape, label, isPiercing);
+                var part = ReadShape(nif, _skeleton, shape, label, isPiercing, skinDiffuse);
                 if (part != null) model.Parts.Add(part);
             }
         }
@@ -162,6 +175,20 @@ public sealed class NpcModelBuilder
         return null;
     }
 
+    /// <summary>The game only swaps in the skin texture set on shapes using the skin-tint shader.</summary>
+    private static bool IsSkinShader(NifFile nif, NiShape shape)
+    {
+        try
+        {
+            var shader = nif.GetShader(shape);
+            return shader != null && shader.GetShaderType() == 5; // BSLSP_SKINTINT
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static bool IsOrigin(MatTransform t) =>
         Math.Abs(t.translation.x) + Math.Abs(t.translation.y) + Math.Abs(t.translation.z) < 0.001f;
 
@@ -194,7 +221,7 @@ public sealed class NpcModelBuilder
         }
     }
 
-    private static MeshPart? ReadShape(NifFile nif, NifFile? skeleton, NiShape shape, string label, bool isPiercing)
+    private static MeshPart? ReadShape(NifFile nif, NifFile? skeleton, NiShape shape, string label, bool isPiercing, string? skinDiffuse)
     {
         var verts = nif.GetVertsForShape(shape);
         if (verts == null || verts.Count == 0) return null;
@@ -236,8 +263,8 @@ public sealed class NpcModelBuilder
 
         string? diffuse = null;
         try { diffuse = nif.GetTexturePathByIndex(shape, 0); } catch { }
-        if (!string.IsNullOrWhiteSpace(diffuse) && !diffuse.StartsWith("textures", StringComparison.OrdinalIgnoreCase))
-            diffuse = Path.Combine("textures", diffuse);
+        diffuse = TexturePath(diffuse);
+        if (skinDiffuse != null && IsSkinShader(nif, shape)) diffuse = skinDiffuse;
 
         return new MeshPart
         {
