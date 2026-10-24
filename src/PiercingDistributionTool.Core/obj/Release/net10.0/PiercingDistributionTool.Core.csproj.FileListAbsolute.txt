@@ -1,0 +1,12 @@
+D:\Piercing tool\src\PiercingDistributionTool.Core\bin\Release\net10.0\PiercingDistributionTool.Core.deps.json
+D:\Piercing tool\src\PiercingDistributionTool.Core\bin\Release\net10.0\PiercingDistributionTool.Core.dll
+D:\Piercing tool\src\PiercingDistributionTool.Core\bin\Release\net10.0\PiercingDistributionTool.Core.pdb
+D:\Piercing tool\src\PiercingDistributionTool.Core\obj\Release\net10.0\PiercingDistributionTool.Core.csproj.AssemblyReference.cache
+D:\Piercing tool\src\PiercingDistributionTool.Core\obj\Release\net10.0\PiercingDistributionTool.Core.GeneratedMSBuildEditorConfig.editorconfig
+D:\Piercing tool\src\PiercingDistributionTool.Core\obj\Release\net10.0\PiercingDistributionTool.Core.AssemblyInfoInputs.cache
+D:\Piercing tool\src\PiercingDistributionTool.Core\obj\Release\net10.0\PiercingDistributionTool.Core.AssemblyInfo.cs
+D:\Piercing tool\src\PiercingDistributionTool.Core\obj\Release\net10.0\PiercingDistributionTool.Core.csproj.CoreCompileInputs.cache
+D:\Piercing tool\src\PiercingDistributionTool.Core\obj\Release\net10.0\PiercingDistributionTool.Core.dll
+D:\Piercing tool\src\PiercingDistributionTool.Core\obj\Release\net10.0\refint\PiercingDistributionTool.Core.dll
+D:\Piercing tool\src\PiercingDistributionTool.Core\obj\Release\net10.0\PiercingDistributionTool.Core.pdb
+D:\Piercing tool\src\PiercingDistributionTool.Core\obj\Release\net10.0\ref\PiercingDistributionTool.Core.dll

@@ -138,8 +138,9 @@ public sealed class NpcModelBuilder
 
     /// <summary>
     /// Bind-pose placement of a skinned shape: a vertex goes skin -> bone through the skin-to-bone
-    /// transform, then bone -> skeleton through the bone's bind position, taken from the race skeleton
-    /// (the mesh's own node is the fallback). The head bone is preferred so every head part shares one
+    /// transform, then bone -> skeleton through the bone's bind position. The mesh's own node wins
+    /// when it carries one, since bodies are bound to a pose that differs from the skeleton's rest
+    /// pose; FaceGen heads often store empty nodes, so those fall back to the race skeleton. The head bone is preferred so every head part shares one
     /// reference; any bound bone gives the same answer in bind pose.
     /// </summary>
     private static MatTransform? SkinToGlobal(NifFile nif, NifFile? skeleton, NiShape shape)
@@ -153,11 +154,44 @@ public sealed class NpcModelBuilder
             var boneGlobal = new MatTransform();
             var skinToBone = new MatTransform();
             if (!nif.GetShapeTransformSkinToBone(shape, bone, skinToBone)) continue;
-            if (skeleton != null && skeleton.GetNodeTransformToGlobal(bone, boneGlobal)
-                || nif.GetNodeTransformToGlobal(bone, boneGlobal))
+            if (nif.GetNodeTransformToGlobal(bone, boneGlobal) && !IsOrigin(boneGlobal))
+                return boneGlobal.ComposeTransforms(skinToBone);
+            if (skeleton != null && skeleton.GetNodeTransformToGlobal(bone, boneGlobal))
                 return boneGlobal.ComposeTransforms(skinToBone);
         }
         return null;
+    }
+
+    private static bool IsOrigin(MatTransform t) =>
+        Math.Abs(t.translation.x) + Math.Abs(t.translation.y) + Math.Abs(t.translation.z) < 0.001f;
+
+    /// <summary>
+    /// Skin and head meshes using model-space normal maps store no vertex normals, so they are
+    /// rebuilt from the triangles for the preview's lighting.
+    /// </summary>
+    private static void FillMissingNormals(float[] pos, float[] nrm, uint[] idx)
+    {
+        var any = false;
+        for (var i = 0; i < nrm.Length && !any; i++) any = nrm[i] != 0;
+        if (any) return;
+        for (var t = 0; t + 2 < idx.Length; t += 3)
+        {
+            int a = (int)idx[t] * 3, b = (int)idx[t + 1] * 3, c = (int)idx[t + 2] * 3;
+            if (Math.Max(a, Math.Max(b, c)) + 2 >= pos.Length) continue;
+            float ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
+            float vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+            float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+            foreach (var v in new[] { a, b, c })
+            {
+                nrm[v] += nx; nrm[v + 1] += ny; nrm[v + 2] += nz;
+            }
+        }
+        for (var i = 0; i + 2 < nrm.Length; i += 3)
+        {
+            var len = MathF.Sqrt(nrm[i] * nrm[i] + nrm[i + 1] * nrm[i + 1] + nrm[i + 2] * nrm[i + 2]);
+            if (len > 0) { nrm[i] /= len; nrm[i + 1] /= len; nrm[i + 2] /= len; }
+            else nrm[i + 2] = 1;
+        }
     }
 
     private static MeshPart? ReadShape(NifFile nif, NifFile? skeleton, NiShape shape, string label, bool isPiercing)
@@ -197,6 +231,8 @@ public sealed class NpcModelBuilder
         {
             idx[i * 3] = tris[i].p1; idx[i * 3 + 1] = tris[i].p2; idx[i * 3 + 2] = tris[i].p3;
         }
+
+        FillMissingNormals(pos, nrm, idx);
 
         string? diffuse = null;
         try { diffuse = nif.GetTexturePathByIndex(shape, 0); } catch { }
