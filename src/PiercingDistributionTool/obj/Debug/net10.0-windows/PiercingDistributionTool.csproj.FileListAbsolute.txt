@@ -72,3 +72,5 @@ D:\Piercing tool\src\PiercingDistributionTool\obj\Debug\net10.0-windows\Piercing
 D:\Piercing tool\src\PiercingDistributionTool\obj\Debug\net10.0-windows\PiercingDistributionTool.genruntimeconfig.cache
 D:\Piercing tool\src\PiercingDistributionTool\obj\Debug\net10.0-windows\ref\PiercingDistributionTool.dll
 D:\Piercing tool\src\PiercingDistributionTool\obj\Debug\net10.0-windows\GeneratedInternalTypeHelper.g.cs
+D:\Piercing tool\src\PiercingDistributionTool\bin\Debug\net10.0-windows\BCnEncoder.dll
+D:\Piercing tool\src\PiercingDistributionTool\bin\Debug\net10.0-windows\Microsoft.Toolkit.HighPerformance.dll

@@ -15,6 +15,17 @@
           "PiercingDistributionTool.dll": {}
         }
       },
+      "BCnEncoder.Net/2.1.0": {
+        "dependencies": {
+          "Microsoft.Toolkit.HighPerformance": "7.0.2"
+        },
+        "runtime": {
+          "lib/netstandard2.1/BCnEncoder.dll": {
+            "assemblyVersion": "2.1.0.0",
+            "fileVersion": "2.1.0.0"
+          }
+        }
+      },
       "DynamicData/9.4.31": {
         "dependencies": {
           "System.Reactive": "6.1.0"
@@ -174,6 +185,14 @@
           "lib/net9.0/Microsoft.Extensions.Logging.Abstractions.dll": {
             "assemblyVersion": "9.0.0.0",
             "fileVersion": "9.0.425.16305"
+          }
+        }
+      },
+      "Microsoft.Toolkit.HighPerformance/7.0.2": {
+        "runtime": {
+          "lib/net5.0/Microsoft.Toolkit.HighPerformance.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.0.2.1"
           }
         }
       },
@@ -512,6 +531,7 @@
       },
       "PiercingDistributionTool.Core/1.0.0": {
         "dependencies": {
+          "BCnEncoder.Net": "2.1.0",
           "Mutagen.Bethesda.Skyrim": "0.54.4",
           "Pfim": "0.11.4",
           "niflysharp": "2.0.4"
@@ -530,6 +550,13 @@
       "type": "project",
       "serviceable": false,
       "sha512": ""
+    },
+    "BCnEncoder.Net/2.1.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-bBKYUDhpYenmp8vy5BVUHmS2LFym0NMga9V+S1eMJ+4zQLBwDw63Bs83AKOyqBKC2AqqgxXdTFA2a2V+SmGoIw==",
+      "path": "bcnencoder.net/2.1.0",
+      "hashPath": "bcnencoder.net.2.1.0.nupkg.sha512"
     },
     "DynamicData/9.4.31": {
       "type": "package",
@@ -635,6 +662,13 @@
       "sha512": "sha512-0MXlimU4Dud6t+iNi5NEz3dO2w1HXdhoOLaYFuLPCjAsvlPQGwOT6V2KZRMLEhCAm/stSZt1AUv0XmDdkjvtbw==",
       "path": "microsoft.extensions.logging.abstractions/9.0.4",
       "hashPath": "microsoft.extensions.logging.abstractions.9.0.4.nupkg.sha512"
+    },
+    "Microsoft.Toolkit.HighPerformance/7.0.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-tG6v0AhDw/yJMtiH/tI4F6I/+sNIfu4++6WFfN73FyNcPh31et33w45wo8Lx1sfxcfLtkYk+w2fvU/MubYg4VQ==",
+      "path": "microsoft.toolkit.highperformance/7.0.2",
+      "hashPath": "microsoft.toolkit.highperformance.7.0.2.nupkg.sha512"
     },
     "Mutagen.Bethesda.Core/0.54.4": {
       "type": "package",

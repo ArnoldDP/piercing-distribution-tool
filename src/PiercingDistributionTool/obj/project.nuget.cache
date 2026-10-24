@@ -1,9 +1,10 @@
 {
   "version": 2,
-  "dgSpecHash": "xfUNaIJ2lZQ=",
+  "dgSpecHash": "xa7no8QBLWw=",
   "success": true,
   "projectFilePath": "D:\\Piercing tool\\src\\PiercingDistributionTool\\PiercingDistributionTool.csproj",
   "expectedPackageFiles": [
+    "C:\\Users\\reisk\\.nuget\\packages\\bcnencoder.net\\2.1.0\\bcnencoder.net.2.1.0.nupkg.sha512",
     "C:\\Users\\reisk\\.nuget\\packages\\dynamicdata\\9.4.31\\dynamicdata.9.4.31.nupkg.sha512",
     "C:\\Users\\reisk\\.nuget\\packages\\fluentresults\\3.15.2\\fluentresults.3.15.2.nupkg.sha512",
     "C:\\Users\\reisk\\.nuget\\packages\\gamefinder.common\\4.9.0\\gamefinder.common.4.9.0.nupkg.sha512",
@@ -19,6 +20,7 @@
     "C:\\Users\\reisk\\.nuget\\packages\\loqui\\3.7.0\\loqui.3.7.0.nupkg.sha512",
     "C:\\Users\\reisk\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\9.0.4\\microsoft.extensions.dependencyinjection.abstractions.9.0.4.nupkg.sha512",
     "C:\\Users\\reisk\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\9.0.4\\microsoft.extensions.logging.abstractions.9.0.4.nupkg.sha512",
+    "C:\\Users\\reisk\\.nuget\\packages\\microsoft.toolkit.highperformance\\7.0.2\\microsoft.toolkit.highperformance.7.0.2.nupkg.sha512",
     "C:\\Users\\reisk\\.nuget\\packages\\mutagen.bethesda.core\\0.54.4\\mutagen.bethesda.core.0.54.4.nupkg.sha512",
     "C:\\Users\\reisk\\.nuget\\packages\\mutagen.bethesda.kernel\\0.54.4\\mutagen.bethesda.kernel.0.54.4.nupkg.sha512",
     "C:\\Users\\reisk\\.nuget\\packages\\mutagen.bethesda.skyrim\\0.54.4\\mutagen.bethesda.skyrim.0.54.4.nupkg.sha512",

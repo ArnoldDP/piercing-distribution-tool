@@ -17,6 +17,8 @@ public sealed class NpcModelBuilder
     private readonly ILinkCache<ISkyrimMod, ISkyrimModGetter> _cache;
     private readonly AssetResolver _assets;
     private readonly string _tempFolder;
+    private readonly Dictionary<string, NifFile?> _skeletons = new(StringComparer.OrdinalIgnoreCase);
+    private NifFile? _skeleton;
 
     public NpcModelBuilder(GameSession session, AssetResolver assets)
     {
@@ -29,6 +31,7 @@ public sealed class NpcModelBuilder
     public NpcModel Build(NpcEntry npc, PiercingSet? piercings)
     {
         var model = new NpcModel();
+        _skeleton = SkeletonFor(npc);
 
         if (npc.SkinKey is { } skinKey && _cache.TryResolve<IArmorGetter>(skinKey, out var skin))
         {
@@ -65,6 +68,38 @@ public sealed class NpcModelBuilder
         AddMesh(model, path, addon.EditorID ?? key.ToString(), isPiercing);
     }
 
+    /// <summary>
+    /// The race's skeleton holds each bone's bind position. Many meshes (FaceGen heads especially)
+    /// carry bone nodes with no transform, so the skeleton is the dependable source.
+    /// </summary>
+    private NifFile? SkeletonFor(NpcEntry npc)
+    {
+        string? file = null;
+        if (_cache.TryResolve<IRaceGetter>(npc.RaceKey, out var race))
+        {
+            var models = race.SkeletalModel;
+            file = (npc.IsFemale ? models?.Female?.File : models?.Male?.File)?.DataRelativePath.Path
+                   ?? models?.Male?.File?.DataRelativePath.Path;
+        }
+        file ??= npc.IsFemale ? @"actors\character\character assets female\skeleton_female.nif"
+                              : @"actors\character\character assets\skeleton.nif";
+        var path = file.StartsWith("meshes", StringComparison.OrdinalIgnoreCase) ? file : Path.Combine("meshes", file);
+        if (_skeletons.TryGetValue(path, out var hit)) return hit;
+
+        NifFile? skeleton = null;
+        var bytes = _assets.Read(path);
+        if (bytes != null)
+        {
+            var tmp = Path.Combine(_tempFolder, Guid.NewGuid().ToString("N") + ".nif");
+            File.WriteAllBytes(tmp, bytes);
+            skeleton = new NifFile();
+            if (skeleton.Load(tmp) != 0) { skeleton.Dispose(); skeleton = null; }
+            try { File.Delete(tmp); } catch { }
+        }
+        _skeletons[path] = skeleton;
+        return skeleton;
+    }
+
     /// <summary>The CK bakes heads to FaceGenData under the NPC's defining plugin.</summary>
     private static string FaceGenPath(FormKey npc) =>
         $@"meshes\actors\character\facegendata\facegeom\{npc.ModKey.FileName}\{npc.ID:X8}.nif";
@@ -91,7 +126,7 @@ public sealed class NpcModelBuilder
             }
             foreach (var shape in nif.GetShapes())
             {
-                var part = ReadShape(nif, shape, label, isPiercing);
+                var part = ReadShape(nif, _skeleton, shape, label, isPiercing);
                 if (part != null) model.Parts.Add(part);
             }
         }
@@ -103,25 +138,29 @@ public sealed class NpcModelBuilder
 
     /// <summary>
     /// Bind-pose placement of a skinned shape: a vertex goes skin -> bone through the skin-to-bone
-    /// transform, then bone -> skeleton through the bone's node. Any one bound bone gives the same
-    /// answer in bind pose; FaceGen parts often store no global offset, so this is the reliable route.
+    /// transform, then bone -> skeleton through the bone's bind position, taken from the race skeleton
+    /// (the mesh's own node is the fallback). The head bone is preferred so every head part shares one
+    /// reference; any bound bone gives the same answer in bind pose.
     /// </summary>
-    private static MatTransform? SkinToGlobal(NifFile nif, NiShape shape)
+    private static MatTransform? SkinToGlobal(NifFile nif, NifFile? skeleton, NiShape shape)
     {
         if (!shape.HasSkinInstance()) return null;
         var bones = new vectorstring();
         if (nif.GetShapeBoneList(shape, bones) == 0) return null;
-        foreach (var bone in bones)
+        var ordered = bones.OrderBy(b => b == "NPC Head [Head]" ? 0 : 1).ToList();
+        foreach (var bone in ordered)
         {
             var boneGlobal = new MatTransform();
             var skinToBone = new MatTransform();
-            if (nif.GetNodeTransformToGlobal(bone, boneGlobal) && nif.GetShapeTransformSkinToBone(shape, bone, skinToBone))
+            if (!nif.GetShapeTransformSkinToBone(shape, bone, skinToBone)) continue;
+            if (skeleton != null && skeleton.GetNodeTransformToGlobal(bone, boneGlobal)
+                || nif.GetNodeTransformToGlobal(bone, boneGlobal))
                 return boneGlobal.ComposeTransforms(skinToBone);
         }
         return null;
     }
 
-    private static MeshPart? ReadShape(NifFile nif, NiShape shape, string label, bool isPiercing)
+    private static MeshPart? ReadShape(NifFile nif, NifFile? skeleton, NiShape shape, string label, bool isPiercing)
     {
         var verts = nif.GetVertsForShape(shape);
         if (verts == null || verts.Count == 0) return null;
@@ -132,7 +171,7 @@ public sealed class NpcModelBuilder
 
         // Skinned shapes store vertices in their own bind space; this brings each into the
         // skeleton space every body part and head share, which is how Outfit Studio lines them up.
-        var global = SkinToGlobal(nif, shape) ?? shape.transform;
+        var global = SkinToGlobal(nif, skeleton, shape) ?? shape.transform;
 
         var n = verts.Count;
         var pos = new float[n * 3];

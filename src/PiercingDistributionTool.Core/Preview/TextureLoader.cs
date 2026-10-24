@@ -1,3 +1,7 @@
+using System.Runtime.InteropServices;
+using BCnEncoder.Decoder;
+using BCnEncoder.Shared;
+using BCnEncoder.Shared.ImageFiles;
 using Pfim;
 using PiercingDistributionTool.Core.Assets;
 
@@ -5,7 +9,10 @@ namespace PiercingDistributionTool.Core.Preview;
 
 public sealed record Rgba(int Width, int Height, byte[] Pixels);
 
-/// <summary>Decodes DDS textures to plain RGBA for upload; anything undecodable falls back to grey.</summary>
+/// <summary>
+/// Decodes DDS textures to plain RGBA for upload. Block-compressed formats (BC1-BC7, which modern
+/// texture mods use) go through BCnEncoder; uncompressed ones through Pfim; anything else is grey.
+/// </summary>
 public sealed class TextureLoader
 {
     private readonly AssetResolver _assets;
@@ -22,18 +29,44 @@ public sealed class TextureLoader
         var bytes = _assets.Read(path);
         if (bytes != null)
         {
-            try
+            result = DecodeBlockCompressed(bytes);
+            if (result == null)
             {
-                using var image = Pfimage.FromStream(new MemoryStream(bytes));
-                result = ToRgba(image);
-            }
-            catch
-            {
-                result = null;
+                try
+                {
+                    using var image = Pfimage.FromStream(new MemoryStream(bytes));
+                    result = ToRgba(image);
+                }
+                catch
+                {
+                    result = null;
+                }
             }
         }
         _cache[path] = result;
         return result;
+    }
+
+    private static Rgba? DecodeBlockCompressed(byte[] bytes)
+    {
+        try
+        {
+            var dds = DdsFile.Load(new MemoryStream(bytes));
+            var decoder = new BcDecoder();
+            if (!decoder.IsHdrFormat(dds) && dds.Faces.Count > 0)
+            {
+                var pixels = decoder.Decode(dds);
+                var w = (int)dds.header.dwWidth;
+                var h = (int)dds.header.dwHeight;
+                if (pixels.Length != w * h) return null;
+                return new Rgba(w, h, MemoryMarshal.AsBytes(pixels.AsSpan()).ToArray());
+            }
+        }
+        catch
+        {
+            // not block-compressed, or a format BCnEncoder doesn't read
+        }
+        return null;
     }
 
     private static Rgba? ToRgba(IImage image)
