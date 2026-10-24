@@ -68,6 +68,9 @@ public sealed class GameSession : IDisposable
     public IEnumerable<INpcGetter> WinningNpcs() =>
         _env.LoadOrder.PriorityOrder.Npc().WinningOverrides();
 
+    public IEnumerable<IArmorGetter> WinningArmors() =>
+        _env.LoadOrder.PriorityOrder.Armor().WinningOverrides();
+
     public IEnumerable<IArmorAddonGetter> WinningArmorAddons() =>
         _env.LoadOrder.PriorityOrder.ArmorAddon().WinningOverrides();
 

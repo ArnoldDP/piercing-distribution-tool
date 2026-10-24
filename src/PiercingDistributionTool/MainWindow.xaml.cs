@@ -18,11 +18,11 @@ public partial class MainWindow : Window
     private TextureLoader? _textures;
     private IReadOnlyList<NpcEntry> _npcs = Array.Empty<NpcEntry>();
     private Dictionary<FormKey, PiercingSet> _assigned = new();
-    private List<AddonRow> _allAddons = new();
+    private List<RecordRow> _records = new();
+    private Dictionary<FormKey, RecordRow> _addonsByKey = new();
     private bool _syncing;
 
-    private const string AssignedByRules = "(as the rules decide)";
-    private const string ForcedNone = "(none)";
+    private const string NoSet = "(none)";
 
     public MainWindow()
     {
@@ -31,11 +31,7 @@ public partial class MainWindow : Window
         DataFolderBox.Text = _settings.DataFolder ?? "";
         OutputNameBox.Text = _settings.OutputPluginName;
         OutputFolderBox.Text = _settings.OutputFolder ?? "";
-        ChanceSlider.Value = _settings.Rules.ChancePercent;
-        UniqueBox.IsChecked = _settings.Rules.IncludeUnique;
-        GenericBox.IsChecked = _settings.Rules.IncludeGeneric;
         _syncing = false;
-        RefreshRulesLabels();
         RefreshSetList();
         Closing += (_, _) => { SaveSettings(); _session?.Dispose(); };
     }
@@ -50,26 +46,24 @@ public partial class MainWindow : Window
         var ownPatch = ModKey.FromFileName(_settings.OutputPluginName);
         try
         {
-            var (session, npcs, addons) = await Task.Run(() =>
+            var (session, npcs, records) = await Task.Run(() =>
             {
                 var s = GameSession.Open(folder, ownPatch);
-                var n = NpcEntry.Collect(s);
-                var a = s.WinningArmorAddons()
-                    .Select(x => new AddonRow(x.FormKey, x.EditorID ?? "",
-                        x.WorldModel?.Female?.File?.DataRelativePath.Path ?? x.WorldModel?.Male?.File?.DataRelativePath.Path ?? ""))
-                    .ToList();
-                return (s, n, a);
+                return (s, NpcEntry.Collect(s), RecordRow.Collect(s));
             });
             _session?.Dispose();
             _session = session;
             _npcs = npcs;
-            _allAddons = addons;
+            _records = records;
+            _addonsByKey = records.Where(r => r.IsAddon).GroupBy(r => r.Key).ToDictionary(g => g.Key, g => g.First());
             var assets = new AssetResolver(session.DataFolder);
             _builder = new NpcModelBuilder(session, assets);
             _textures = new TextureLoader(assets);
             _settings.DataFolder = folder;
             WriteButton.IsEnabled = true;
             Recompute();
+            RefreshSetAddons();
+            OnRecordSearchChanged(this, e);
             Status($"Loaded {session.LoadOrder.Count} plugins and {npcs.Count} NPCs from {session.DataFolder}.");
         }
         catch (Exception ex)
@@ -111,9 +105,11 @@ public partial class MainWindow : Window
             .Select(n => new NpcRow(n, _assigned.TryGetValue(n.FormKey, out var s) ? s.Name : null))
             .ToList();
         var selected = (NpcList.SelectedItem as NpcRow)?.Npc.FormKey;
+        _syncing = true;
         NpcList.ItemsSource = rows;
         if (selected != null) NpcList.SelectedItem = rows.FirstOrDefault(r => r.Npc.FormKey == selected);
-        NpcCountText.Text = $"{rows.Count} shown · {_assigned.Count} will get piercings";
+        _syncing = false;
+        NpcCountText.Text = $"{rows.Count} shown · {_assigned.Count} with piercings";
     }
 
     private void OnNpcFilterChanged(object sender, RoutedEventArgs e)
@@ -123,21 +119,37 @@ public partial class MainWindow : Window
 
     private void OnNpcSelected(object sender, SelectionChangedEventArgs e)
     {
+        if (!_syncing) SyncNpcPanel(rebuildPreview: true);
+    }
+
+    private void SyncNpcPanel(bool rebuildPreview)
+    {
         var row = NpcList.SelectedItem as NpcRow;
         _syncing = true;
-        var overrideItems = new List<string> { AssignedByRules, ForcedNone };
-        overrideItems.AddRange(_settings.Sets.Select(s => s.Name));
-        NpcOverrideBox.ItemsSource = overrideItems;
-        if (row != null && _settings.Rules.Overrides.TryGetValue(row.Npc.FormKey.ToString(), out var forced))
-            NpcOverrideBox.SelectedItem = forced == "" ? ForcedNone : forced;
-        else NpcOverrideBox.SelectedItem = AssignedByRules;
-
-        var previewItems = new List<string> { ForcedNone };
-        previewItems.AddRange(_settings.Sets.Select(s => s.Name));
-        PreviewSetBox.ItemsSource = previewItems;
-        PreviewSetBox.SelectedItem = row?.SetName ?? ForcedNone;
+        var names = new List<string> { NoSet };
+        names.AddRange(_settings.Sets.Select(s => s.Name));
+        NpcSetBox.ItemsSource = names;
+        NpcSetBox.SelectedItem = row?.SetName ?? NoSet;
+        NpcSetBox.IsEnabled = row != null && row.Npc.SkipReason == null;
+        SelectedNpcText.Text = row == null ? "Pick an NPC on the left."
+            : row.Npc.SkipReason != null ? $"{row.Npc.Display}: can't be given piercings ({row.Npc.SkipReason})."
+            : $"{row.Npc.Display} [{row.Npc.FormKey}]";
+        var previewed = PreviewSetBox.SelectedItem as string;
+        PreviewSetBox.ItemsSource = names;
+        PreviewSetBox.SelectedItem = rebuildPreview || previewed == null || !names.Contains(previewed) ? row?.SetName ?? NoSet : previewed;
         _syncing = false;
-        RebuildPreview();
+        if (rebuildPreview) RebuildPreview();
+    }
+
+    private void OnNpcSetChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncing || NpcList.SelectedItem is not NpcRow row || NpcSetBox.SelectedItem is not string choice) return;
+        var key = row.Npc.FormKey.ToString();
+        if (choice == NoSet) _settings.Rules.Overrides.Remove(key);
+        else _settings.Rules.Overrides[key] = choice;
+        SaveSettings();
+        Recompute();
+        SyncNpcPanel(rebuildPreview: true);
     }
 
     // ---------- preview ----------
@@ -190,24 +202,32 @@ public partial class MainWindow : Window
         SetList.ItemsSource = null;
         SetList.ItemsSource = _settings.Sets;
         if (select != null) SetList.SelectedItem = select;
+        SyncNpcPanel(rebuildPreview: false);
     }
 
     private PiercingSet? SelectedSet => SetList.SelectedItem as PiercingSet;
 
-    private void OnAddSet(object sender, RoutedEventArgs e)
+    private void OnAddSet(object sender, RoutedEventArgs e) => CreateSet("New set");
+
+    private PiercingSet CreateSet(string name)
     {
-        var set = new PiercingSet { Name = UniqueSetName("New set") };
+        var set = new PiercingSet { Name = UniqueSetName(name) };
         _settings.Sets.Add(set);
         RefreshSetList(set);
-        Recompute();
+        return set;
     }
 
     private void OnRemoveSet(object sender, RoutedEventArgs e)
     {
         if (SelectedSet is not { } set) return;
+        var users = _settings.Rules.Overrides.Where(kv => kv.Value == set.Name).Select(kv => kv.Key).ToList();
+        if (users.Count > 0 && MessageBox.Show(this, $"{users.Count} NPC(s) use \"{set.Name}\". Delete it and take it off them?",
+                "Delete set", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        foreach (var key in users) _settings.Rules.Overrides.Remove(key);
         _settings.Sets.Remove(set);
         RefreshSetList();
         Recompute();
+        SyncNpcPanel(rebuildPreview: true);
     }
 
     private void OnSetSelected(object sender, SelectionChangedEventArgs e)
@@ -216,58 +236,63 @@ public partial class MainWindow : Window
         SetEditor.IsEnabled = set != null;
         _syncing = true;
         SetNameBox.Text = set?.Name ?? "";
-        SetGenderBox.SelectedIndex = set == null ? 0 : (int)set.Gender;
-        SetRacesBox.Text = set == null ? "" : string.Join(", ", set.Races);
-        SetWeightBox.Text = set?.Weight.ToString() ?? "";
         _syncing = false;
         RefreshSetAddons();
     }
 
-    private void OnSetFieldChanged(object sender, RoutedEventArgs e)
+    private void OnSetNameChanged(object sender, RoutedEventArgs e)
     {
         if (_syncing || SelectedSet is not { } set) return;
         var newName = SetNameBox.Text.Trim();
-        if (newName.Length > 0 && newName != set.Name)
-        {
-            newName = UniqueSetName(newName, set);
-            foreach (var key in _settings.Rules.Overrides.Where(kv => kv.Value == set.Name).Select(kv => kv.Key).ToList())
-                _settings.Rules.Overrides[key] = newName;
-            set.Name = newName;
-        }
-        set.Gender = (GenderFilter)Math.Max(0, SetGenderBox.SelectedIndex);
-        set.Races = SetRacesBox.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        if (int.TryParse(SetWeightBox.Text, out var w)) set.Weight = Math.Max(0, w);
+        if (newName.Length == 0 || newName == set.Name) return;
+        newName = UniqueSetName(newName, set);
+        foreach (var key in _settings.Rules.Overrides.Where(kv => kv.Value == set.Name).Select(kv => kv.Key).ToList())
+            _settings.Rules.Overrides[key] = newName;
+        set.Name = newName;
         RefreshSetList(set);
         Recompute();
+        SyncNpcPanel(rebuildPreview: false);
     }
 
     private void RefreshSetAddons()
     {
-        SetAddonList.ItemsSource = SelectedSet?.ArmorAddons.Select(DescribeAddon).ToList();
+        SetAddonList.ItemsSource = SelectedSet?.ArmorAddons
+            .Select(k => FormKey.TryFactory(k) is { } fk && _addonsByKey.TryGetValue(fk, out var r) ? r.ToString() : k)
+            .ToList();
     }
 
-    private string DescribeAddon(string key)
+    private void OnRecordSearchChanged(object sender, RoutedEventArgs e)
     {
-        var fk = FormKey.TryFactory(key);
-        var row = fk == null ? null : _allAddons.FirstOrDefault(a => a.Key == fk);
-        return row?.ToString() ?? key;
+        if (!IsLoaded) return;
+        var q = RecordSearch.Text.Trim();
+        var kind = RecordKindBox.SelectedIndex; // 0 armor, 1 addon, 2 both
+        if (_records.Count == 0 || q.Length < 2)
+        {
+            RecordResults.ItemsSource = null;
+            RecordCountText.Text = _records.Count == 0 ? "Load your game first." : "Type at least two letters.";
+            return;
+        }
+        var hits = _records
+            .Where(r => kind == 2 || (kind == 1) == r.IsAddon)
+            .Where(r => r.Matches(q))
+            .ToList();
+        RecordResults.ItemsSource = hits.Take(500).ToList();
+        RecordCountText.Text = hits.Count > 500 ? $"{hits.Count} matches, first 500 shown" : $"{hits.Count} matches";
     }
 
-    private void OnAddonSearchChanged(object sender, TextChangedEventArgs e)
+    /// <summary>Adds the picked record to the selected set; an armor brings all of its addons.</summary>
+    private void OnAddRecord(object sender, RoutedEventArgs e)
     {
-        var q = AddonSearch.Text.Trim();
-        AddonResults.ItemsSource = q.Length < 2 ? null : _allAddons
-            .Where(a => a.EditorId.Contains(q, StringComparison.OrdinalIgnoreCase)
-                        || a.Mesh.Contains(q, StringComparison.OrdinalIgnoreCase)
-                        || a.Key.ModKey.FileName.String.Contains(q, StringComparison.OrdinalIgnoreCase))
-            .Take(300).ToList();
-    }
-
-    private void OnAddAddon(object sender, RoutedEventArgs e)
-    {
-        if (SelectedSet is not { } set || AddonResults.SelectedItem is not AddonRow row) return;
-        var key = row.Key.ToString();
-        if (!set.ArmorAddons.Contains(key)) set.ArmorAddons.Add(key);
+        if (RecordResults.SelectedItem is not RecordRow row) return;
+        var set = SelectedSet ?? CreateSet(row.Name.Length > 0 ? row.Name : row.EditorId);
+        var added = 0;
+        foreach (var key in row.AddonKeys.Select(k => k.ToString()))
+        {
+            if (set.ArmorAddons.Contains(key)) continue;
+            set.ArmorAddons.Add(key);
+            added++;
+        }
+        Status($"Added {added} armor addon(s) from {row.EditorId} to \"{set.Name}\".");
         RefreshSetAddons();
         Recompute();
         RebuildPreview();
@@ -315,40 +340,6 @@ public partial class MainWindow : Window
         return name;
     }
 
-    // ---------- rules ----------
-
-    private void OnRulesChanged(object sender, RoutedEventArgs e)
-    {
-        if (_syncing || !IsLoaded) return;
-        _settings.Rules.ChancePercent = ChanceSlider.Value;
-        _settings.Rules.IncludeUnique = UniqueBox.IsChecked == true;
-        _settings.Rules.IncludeGeneric = GenericBox.IsChecked == true;
-        RefreshRulesLabels();
-        Recompute();
-    }
-
-    private void OnReshuffle(object sender, RoutedEventArgs e)
-    {
-        _settings.Rules.Seed++;
-        RefreshRulesLabels();
-        Recompute();
-    }
-
-    private void RefreshRulesLabels()
-    {
-        ChanceLabel.Text = $"Chance: {_settings.Rules.ChancePercent:0}%";
-        SeedLabel.Text = $"Seed: {_settings.Rules.Seed}";
-    }
-
-    private void OnNpcOverrideChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_syncing || NpcList.SelectedItem is not NpcRow row || NpcOverrideBox.SelectedItem is not string choice) return;
-        var key = row.Npc.FormKey.ToString();
-        if (choice == AssignedByRules) _settings.Rules.Overrides.Remove(key);
-        else _settings.Rules.Overrides[key] = choice == ForcedNone ? "" : choice;
-        Recompute();
-    }
-
     // ---------- output ----------
 
     private void OnOutputChanged(object sender, RoutedEventArgs e)
@@ -367,7 +358,7 @@ public partial class MainWindow : Window
         var assignments = Distributor.Assign(_npcs, _settings);
         if (assignments.Count == 0)
         {
-            Status("Nothing to write: no NPC is assigned a set. Add a set with armor addons, or raise the chance.");
+            Status("Nothing to write: no NPC has a set. Pick an NPC and choose a set under This NPC.");
             return;
         }
         WriteButton.IsEnabled = false;
@@ -407,8 +398,35 @@ public partial class MainWindow : Window
                                 + (Npc.SkipReason != null ? $" · skipped ({Npc.SkipReason})" : "");
     }
 
-    private sealed record AddonRow(FormKey Key, string EditorId, string Mesh)
+    /// <summary>An armor or armor addon from an enabled plugin, as the record search shows it.</summary>
+    private sealed record RecordRow(FormKey Key, bool IsAddon, string EditorId, string Name, string Mesh, IReadOnlyList<FormKey> AddonKeys)
     {
-        public override string ToString() => $"{EditorId}  [{Key}]  {Mesh}";
+        public static List<RecordRow> Collect(GameSession session)
+        {
+            var rows = new List<RecordRow>();
+            foreach (var a in session.WinningArmors())
+            {
+                var addons = a.Armature.Select(x => x.FormKey).ToList();
+                if (addons.Count == 0) continue;
+                rows.Add(new RecordRow(a.FormKey, false, a.EditorID ?? "", a.Name?.String ?? "",
+                    a.WorldModel?.Female?.Model?.File?.DataRelativePath.Path ?? a.WorldModel?.Male?.Model?.File?.DataRelativePath.Path ?? "",
+                    addons));
+            }
+            foreach (var x in session.WinningArmorAddons())
+                rows.Add(new RecordRow(x.FormKey, true, x.EditorID ?? "", "",
+                    x.WorldModel?.Female?.File?.DataRelativePath.Path ?? x.WorldModel?.Male?.File?.DataRelativePath.Path ?? "",
+                    new[] { x.FormKey }));
+            return rows;
+        }
+
+        public bool Matches(string q) =>
+            EditorId.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || Name.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || Mesh.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || Key.ModKey.FileName.String.Contains(q, StringComparison.OrdinalIgnoreCase);
+
+        public override string ToString() =>
+            $"[{(IsAddon ? "ARMA" : "ARMO")}] {EditorId}{(Name.Length > 0 ? $" \"{Name}\"" : "")}  ·  {Key.ModKey.FileName}"
+            + (IsAddon ? $"  ·  {Mesh}" : $"  ·  {AddonKeys.Count} addon(s)");
     }
 }

@@ -24,7 +24,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="320"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="380"/>
+                <ColumnDefinition Width="400"/>
             </Grid.ColumnDefinitions>
 
             <!-- NPC list -->
@@ -38,7 +38,7 @@
                         <ComboBoxItem Content="Female"/>
                         <ComboBoxItem Content="Male"/>
                     </ComboBox>
-                    <CheckBox x:Name="AssignedOnlyBox" Content="Assigned only" Margin="10,0,0,0" VerticalAlignment="Center"
+                    <CheckBox x:Name="AssignedOnlyBox" Content="With piercings only" Margin="10,0,0,0" VerticalAlignment="Center"
                               Checked="OnNpcFilterChanged" Unchecked="OnNpcFilterChanged"/>
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Bottom" x:Name="NpcCountText" Margin="0,4,0,0" Foreground="Gray"/>
@@ -62,68 +62,61 @@
                               Checked="OnShowPiercingsChanged" Unchecked="OnShowPiercingsChanged"/>
                     <TextBlock Text="Preview set:" Margin="16,0,6,0" VerticalAlignment="Center"/>
                     <ComboBox x:Name="PreviewSetBox" Width="200" SelectionChanged="OnPreviewSetChanged"
-                              ToolTip="Which set to show on this NPC. Defaults to the one the rules assign."/>
+                              ToolTip="Try a set on this NPC without assigning it. Defaults to the NPC's assigned set."/>
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Bottom" x:Name="PreviewInfo" Foreground="Gray" TextWrapping="Wrap" Margin="0,6,0,0"
                            Text="Drag to rotate, right-drag to move up and down, scroll to zoom."/>
                 <preview:PreviewView x:Name="Preview"/>
             </DockPanel>
 
-            <!-- Sets and rules -->
+            <!-- Assignment, sets and record search -->
             <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="8">
-                    <TextBlock Text="Piercing sets" FontWeight="SemiBold"/>
-                    <DockPanel Margin="0,4">
-                        <StackPanel DockPanel.Dock="Right" Orientation="Vertical" Margin="6,0,0,0">
-                            <Button Content="Add" Click="OnAddSet" Margin="0,0,0,4"/>
-                            <Button Content="Remove" Click="OnRemoveSet" Margin="0,0,0,4"/>
-                            <Button Content="Import…" Click="OnImportPreset" Margin="0,0,0,4"/>
-                            <Button Content="Export…" Click="OnExportPreset"/>
-                        </StackPanel>
-                        <ListBox x:Name="SetList" Height="120" DisplayMemberPath="Name" SelectionChanged="OnSetSelected"/>
-                    </DockPanel>
-
-                    <GroupBox Header="Selected set" Margin="0,6" x:Name="SetEditor" IsEnabled="False">
+                    <GroupBox Header="This NPC">
                         <StackPanel Margin="4">
-                            <TextBlock Text="Name"/>
-                            <TextBox x:Name="SetNameBox" LostFocus="OnSetFieldChanged"/>
-                            <TextBlock Text="Sex" Margin="0,6,0,0"/>
-                            <ComboBox x:Name="SetGenderBox" SelectionChanged="OnSetFieldChanged">
-                                <ComboBoxItem Content="Any"/>
-                                <ComboBoxItem Content="Female"/>
-                                <ComboBoxItem Content="Male"/>
-                            </ComboBox>
-                            <TextBlock Text="Races (EditorIDs, comma separated; blank = any)" Margin="0,6,0,0"/>
-                            <TextBox x:Name="SetRacesBox" LostFocus="OnSetFieldChanged"/>
-                            <TextBlock Text="Weight" Margin="0,6,0,0"/>
-                            <TextBox x:Name="SetWeightBox" LostFocus="OnSetFieldChanged"/>
-                            <TextBlock Text="Armor addons in this set" Margin="0,6,0,0"/>
-                            <ListBox x:Name="SetAddonList" Height="90"/>
-                            <Button Content="Remove selected addon" Click="OnRemoveAddon" Margin="0,4,0,0"/>
-                            <TextBlock Text="Find armor addons to add" Margin="0,8,0,0"/>
-                            <TextBox x:Name="AddonSearch" TextChanged="OnAddonSearchChanged"
-                                     ToolTip="Type part of an EditorID, mesh path or plugin name"/>
-                            <ListBox x:Name="AddonResults" Height="120" Margin="0,4,0,0" MouseDoubleClick="OnAddAddon"/>
-                            <Button Content="Add selected addon" Click="OnAddAddon" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="SelectedNpcText" Text="Pick an NPC on the left." TextWrapping="Wrap"/>
+                            <TextBlock Text="Piercing set" Margin="0,6,0,0"/>
+                            <ComboBox x:Name="NpcSetBox" SelectionChanged="OnNpcSetChanged" IsEnabled="False"
+                                      ToolTip="Only NPCs you give a set here get piercings"/>
                         </StackPanel>
                     </GroupBox>
 
-                    <GroupBox Header="Who gets piercings" Margin="0,6">
+                    <GroupBox Header="Piercing sets" Margin="0,6">
                         <StackPanel Margin="4">
-                            <TextBlock x:Name="ChanceLabel" Text="Chance: 30%"/>
-                            <Slider x:Name="ChanceSlider" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True"
-                                    ValueChanged="OnRulesChanged"/>
-                            <CheckBox x:Name="UniqueBox" Content="Named (unique) NPCs" Margin="0,4,0,0"
-                                      Checked="OnRulesChanged" Unchecked="OnRulesChanged"/>
-                            <CheckBox x:Name="GenericBox" Content="Generic NPCs" Margin="0,2,0,0"
-                                      Checked="OnRulesChanged" Unchecked="OnRulesChanged"/>
-                            <DockPanel Margin="0,6,0,0">
-                                <Button DockPanel.Dock="Right" Content="Reshuffle" Click="OnReshuffle" Padding="8,0"/>
-                                <TextBlock x:Name="SeedLabel" VerticalAlignment="Center" Text="Seed: 1"/>
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Vertical" Margin="6,0,0,0">
+                                    <Button Content="New" Click="OnAddSet" Margin="0,0,0,4"/>
+                                    <Button Content="Delete" Click="OnRemoveSet" Margin="0,0,0,4"/>
+                                    <Button Content="Import…" Click="OnImportPreset" Margin="0,0,0,4"/>
+                                    <Button Content="Export…" Click="OnExportPreset"/>
+                                </StackPanel>
+                                <ListBox x:Name="SetList" Height="110" DisplayMemberPath="Name" SelectionChanged="OnSetSelected"/>
                             </DockPanel>
-                            <TextBlock Text="This NPC" Margin="0,8,0,0" FontWeight="SemiBold"/>
-                            <ComboBox x:Name="NpcOverrideBox" SelectionChanged="OnNpcOverrideChanged"
-                                      ToolTip="Force a set (or none) for the selected NPC, ignoring the chance roll"/>
+                            <StackPanel x:Name="SetEditor" IsEnabled="False" Margin="0,6,0,0">
+                                <TextBlock Text="Name"/>
+                                <TextBox x:Name="SetNameBox" LostFocus="OnSetNameChanged"/>
+                                <TextBlock Text="Armor addons in this set" Margin="0,6,0,0"/>
+                                <ListBox x:Name="SetAddonList" Height="90"/>
+                                <Button Content="Remove selected addon" Click="OnRemoveAddon" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Find piercings in your load order" Margin="0,6">
+                        <StackPanel Margin="4">
+                            <DockPanel>
+                                <ComboBox DockPanel.Dock="Right" x:Name="RecordKindBox" Width="110" Margin="6,0,0,0" SelectedIndex="0"
+                                          SelectionChanged="OnRecordSearchChanged">
+                                    <ComboBoxItem Content="Armor"/>
+                                    <ComboBoxItem Content="Armor addon"/>
+                                    <ComboBoxItem Content="Both"/>
+                                </ComboBox>
+                                <TextBox x:Name="RecordSearch" TextChanged="OnRecordSearchChanged"
+                                         ToolTip="Name, EditorID, plugin or mesh path. Only enabled plugins are searched."/>
+                            </DockPanel>
+                            <ListBox x:Name="RecordResults" Height="200" Margin="0,4,0,0" MouseDoubleClick="OnAddRecord"/>
+                            <TextBlock x:Name="RecordCountText" Foreground="Gray" Margin="0,2,0,0"/>
+                            <Button Content="Add to selected set (or a new set)" Click="OnAddRecord" Margin="0,4,0,0"/>
                         </StackPanel>
                     </GroupBox>
 

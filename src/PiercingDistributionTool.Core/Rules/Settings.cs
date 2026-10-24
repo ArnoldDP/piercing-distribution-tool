@@ -3,30 +3,17 @@ using System.Text.Json.Serialization;
 
 namespace PiercingDistributionTool.Core.Rules;
 
-public enum GenderFilter { Any, Female, Male }
-
-/// <summary>A named group of piercing armour addons that are given out together.</summary>
+/// <summary>A named group of piercing armour addons that are given to an NPC together.</summary>
 public sealed class PiercingSet
 {
     public string Name { get; set; } = "New set";
     /// <summary>ArmorAddon FormKeys, written "XXXXXX:Plugin.esp".</summary>
     public List<string> ArmorAddons { get; set; } = new();
-    public GenderFilter Gender { get; set; } = GenderFilter.Any;
-    /// <summary>Race EditorIDs this set may go to; empty means any race.</summary>
-    public List<string> Races { get; set; } = new();
-    /// <summary>Relative weight when an NPC qualifies for more than one set.</summary>
-    public int Weight { get; set; } = 1;
 }
 
 public sealed class DistributionRules
 {
-    /// <summary>Percent of eligible NPCs that receive any piercing set.</summary>
-    public double ChancePercent { get; set; } = 30;
-    public bool IncludeUnique { get; set; } = true;
-    public bool IncludeGeneric { get; set; } = true;
-    /// <summary>Changing the seed reshuffles who gets what; the same seed always gives the same result.</summary>
-    public int Seed { get; set; } = 1;
-    /// <summary>NPC FormKey -> set name, or "" to force none. Wins over the random roll.</summary>
+    /// <summary>NPC FormKey -> set name. Only NPCs listed here get piercings.</summary>
     public Dictionary<string, string> Overrides { get; set; } = new();
 }
 
