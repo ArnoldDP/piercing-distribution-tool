@@ -10,6 +10,7 @@ public sealed class MeshPart
     public required uint[] Indices { get; init; }
     public string? DiffusePath { get; init; }
     public bool IsPiercing { get; init; }
+    public float[]? Tint { get; init; }         // rgb multiplied in, e.g. hair colour
     public bool AlphaTest { get; init; }        // the mesh enables alpha testing or blending
     public bool NormalsComputed { get; init; }  // rebuilt from triangles; welded across seams
 }

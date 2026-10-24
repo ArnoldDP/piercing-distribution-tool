@@ -116,6 +116,7 @@ public sealed class PreviewView : ContentControl
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, m.Texture);
             GL.Uniform1(GL.GetUniformLocation(_program, "uAlphaTest"), m.AlphaTest ? 1 : 0);
+            GL.Uniform3(GL.GetUniformLocation(_program, "uTint"), m.Tint is { } t ? new Vector3(t[0], t[1], t[2]) : Vector3.One);
             GL.BindVertexArray(m.Vao);
             GL.DrawElements(PrimitiveType.Triangles, m.IndexCount, DrawElementsType.UnsignedInt, 0);
         }
@@ -136,13 +137,13 @@ public sealed class PreviewView : ContentControl
         const string fs = """
             #version 330 core
             in vec3 vNrm; in vec2 vUv;
-            uniform sampler2D uTex; uniform vec3 uLight; uniform int uAlphaTest;
+            uniform sampler2D uTex; uniform vec3 uLight; uniform int uAlphaTest; uniform vec3 uTint;
             out vec4 frag;
             void main(){
               vec4 c = texture(uTex, vUv);
               if (uAlphaTest == 1 && c.a < 0.35) discard;   // hair and lash cut-outs; skin alpha is not opacity
               float d = abs(dot(normalize(vNrm), uLight));
-              frag = vec4(c.rgb * (0.35 + 0.75 * d), 1.0);
+              frag = vec4(c.rgb * uTint * (0.35 + 0.75 * d), 1.0);
             }
             """;
         _program = GL.CreateProgram();
@@ -181,7 +182,7 @@ public sealed class PreviewView : ContentControl
             GL.BufferData(BufferTarget.ElementArrayBuffer, part.Indices.Length * sizeof(uint), part.Indices, BufferUsageHint.StaticDraw);
             GL.BindVertexArray(0);
 
-            _meshes.Add(new GpuMesh(vao, buffers, part.Indices.Length, TextureFor(part.DiffusePath), part.IsPiercing, part.AlphaTest));
+            _meshes.Add(new GpuMesh(vao, buffers, part.Indices.Length, TextureFor(part.DiffusePath), part.IsPiercing, part.AlphaTest, part.Tint));
         }
     }
 
@@ -215,5 +216,5 @@ public sealed class PreviewView : ContentControl
         return id;
     }
 
-    private sealed record GpuMesh(int Vao, int[] Buffers, int IndexCount, int Texture, bool IsPiercing, bool AlphaTest);
+    private sealed record GpuMesh(int Vao, int[] Buffers, int IndexCount, int Texture, bool IsPiercing, bool AlphaTest, float[]? Tint);
 }

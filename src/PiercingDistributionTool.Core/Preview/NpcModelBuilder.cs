@@ -19,6 +19,9 @@ public sealed class NpcModelBuilder
     private readonly string _tempFolder;
     private readonly Dictionary<string, NifFile?> _skeletons = new(StringComparer.OrdinalIgnoreCase);
     private NifFile? _skeleton;
+    private readonly Dictionary<string, MatTransform> _boneGlobals = new();
+    private float[]? _hairTint;
+    private float _weight = 1f;
 
     public NpcModelBuilder(GameSession session, AssetResolver assets)
     {
@@ -32,6 +35,9 @@ public sealed class NpcModelBuilder
     {
         var model = new NpcModel();
         _skeleton = SkeletonFor(npc);
+        _boneGlobals.Clear();
+        _hairTint = HairTintFor(npc);
+        _weight = _cache.TryResolve<INpcGetter>(npc.FormKey, out var record) ? Math.Clamp(record.Weight / 100f, 0f, 1f) : 1f;
 
         if (npc.SkinKey is { } skinKey && _cache.TryResolve<IArmorGetter>(skinKey, out var skin))
         {
@@ -148,11 +154,33 @@ public sealed class NpcModelBuilder
 
     private void AddMesh(NpcModel model, string relativePath, string label, bool isPiercing, string? skinDiffuse = null)
     {
+        using var nif = LoadNif(relativePath, model, report: true);
+        if (nif == null) return;
+
+        // The game blends each weighted mesh between its _0 (thin) and _1 (heavy) files by the NPC's
+        // weight; FaceGen heads are baked at that weight, so an unblended body leaves a gap at the neck.
+        using var thin = WeightPartner(relativePath) is { } thinPath && _weight < 1f ? LoadNif(thinPath, model, report: false) : null;
+
+        foreach (var shape in nif.GetShapes())
+        {
+            var thinShape = thin?.GetShapes().FirstOrDefault(s => s.name.get() == shape.name.get());
+            var part = ReadShape(nif, shape, label, isPiercing, skinDiffuse,
+                thinShape == null ? null : thin!.GetVertsForShape(thinShape));
+            if (part != null) model.Parts.Add(part);
+        }
+    }
+
+    /// <summary>For "..._1.nif" the thin partner "..._0.nif"; other meshes have none.</summary>
+    private static string? WeightPartner(string path) =>
+        path.EndsWith("_1.nif", StringComparison.OrdinalIgnoreCase) ? path[..^6] + "_0.nif" : null;
+
+    private NifFile? LoadNif(string relativePath, NpcModel model, bool report)
+    {
         var bytes = _assets.Read(relativePath);
         if (bytes == null)
         {
-            model.Missing.Add(relativePath);
-            return;
+            if (report) model.Missing.Add(relativePath);
+            return null;
         }
 
         // nifly reads from disk, so archive contents go through a scratch file.
@@ -160,17 +188,11 @@ public sealed class NpcModelBuilder
         File.WriteAllBytes(tmp, bytes);
         try
         {
-            using var nif = new NifFile();
-            if (nif.Load(tmp) != 0)
-            {
-                model.Missing.Add(relativePath + " (unreadable)");
-                return;
-            }
-            foreach (var shape in nif.GetShapes())
-            {
-                var part = ReadShape(nif, _skeleton, shape, label, isPiercing, skinDiffuse);
-                if (part != null) model.Parts.Add(part);
-            }
+            var nif = new NifFile();
+            if (nif.Load(tmp) == 0) return nif;
+            nif.Dispose();
+            if (report) model.Missing.Add(relativePath + " (unreadable)");
+            return null;
         }
         finally
         {
@@ -180,42 +202,169 @@ public sealed class NpcModelBuilder
 
     /// <summary>
     /// Bind-pose placement of a skinned shape: a vertex goes skin -> bone through the skin-to-bone
-    /// transform, then bone -> skeleton through the bone's bind position. The mesh's own node wins
-    /// when it carries one, since bodies are bound to a pose that differs from the skeleton's rest
-    /// pose; FaceGen heads often store empty nodes, so those fall back to the race skeleton. The head bone is preferred so every head part shares one
-    /// reference; any bound bone gives the same answer in bind pose.
+    /// transform, then bone -> skeleton through the bone's bind position. Sources, best first: the
+    /// mesh's own node; a position already seen in a body mesh of this NPC (FaceGen heads store empty
+    /// nodes, and borrowing the body's keeps the neck closed); the race skeleton.
     /// </summary>
-    private static MatTransform? SkinToGlobal(NifFile nif, NifFile? skeleton, NiShape shape)
+    private MatTransform? SkinToGlobal(NifFile nif, NiShape shape)
     {
         if (!shape.HasSkinInstance()) return null;
         var bones = new vectorstring();
         if (nif.GetShapeBoneList(shape, bones) == 0) return null;
-        var ordered = bones.OrderBy(b => b == "NPC Head [Head]" ? 0 : 1).ToList();
-        foreach (var bone in ordered)
+        var withSkin = new List<(string Bone, MatTransform SkinToBone)>();
+        foreach (var bone in bones)
         {
-            var boneGlobal = new MatTransform();
             var skinToBone = new MatTransform();
-            if (!nif.GetShapeTransformSkinToBone(shape, bone, skinToBone)) continue;
-            if (nif.GetNodeTransformToGlobal(bone, boneGlobal) && !IsOrigin(boneGlobal))
-                return boneGlobal.ComposeTransforms(skinToBone);
-            if (skeleton != null && skeleton.GetNodeTransformToGlobal(bone, boneGlobal))
-                return boneGlobal.ComposeTransforms(skinToBone);
+            if (nif.GetShapeTransformSkinToBone(shape, bone, skinToBone)) withSkin.Add((bone, skinToBone));
+        }
+
+        MatTransform? result = null;
+        foreach (var (bone, skinToBone) in withSkin)
+        {
+            var own = new MatTransform();
+            if (!nif.GetNodeTransformToGlobal(bone, own) || IsOrigin(own)) continue;
+            _boneGlobals.TryAdd(bone, own);
+            result ??= own.ComposeTransforms(skinToBone);
+        }
+        if (result != null) return result;
+
+        foreach (var (bone, skinToBone) in withSkin)
+            if (_boneGlobals.TryGetValue(bone, out var seen))
+                return seen.ComposeTransforms(skinToBone);
+
+        foreach (var (bone, skinToBone) in withSkin)
+        {
+            var fromSkeleton = new MatTransform();
+            if (_skeleton != null && _skeleton.GetNodeTransformToGlobal(bone, fromSkeleton))
+            {
+                // Shift the skeleton's pose onto the body's, so a part that only names a bone the body
+                // lacks (a mouth bound to the head bone alone) still lines up with the rest.
+                var shift = SkeletonToBodyShift();
+                fromSkeleton.translation = new Vector3(fromSkeleton.translation.x + shift.X,
+                    fromSkeleton.translation.y + shift.Y, fromSkeleton.translation.z + shift.Z);
+                return fromSkeleton.ComposeTransforms(skinToBone);
+            }
         }
         return null;
     }
 
+    private sealed record Skinning(MatTransform?[] BoneToGlobal, float[] Weights, byte[] Bones);
+
+    /// <summary>
+    /// Per-vertex skinning data, so each vertex is posed on the actual skeleton the way the game does
+    /// it: a weighted blend of (bone's skeleton position x skin-to-bone) over up to four bones. Bodies
+    /// built for one skeleton and heads baked for another only meet at the neck once both are posed
+    /// on the skeleton the NPC really uses. Only SSE triangle shapes carry these weights; anything
+    /// else falls back to one rigid transform.
+    /// </summary>
+    private Skinning? SkinningFor(NifFile nif, NiShape shape, int vertexCount)
+    {
+        if (!shape.HasSkinInstance()) return null;
+        var block = shape.GetBlockName();
+        if (block != "BSTriShape" && block != "BSDynamicTriShape" && block != "BSSubIndexTriShape") return null;
+        var bones = new vectorstring();
+        if (nif.GetShapeBoneList(shape, bones) == 0) return null;
+
+        var toGlobal = new MatTransform?[bones.Count];
+        for (var b = 0; b < bones.Count; b++)
+        {
+            var skinToBone = new MatTransform();
+            if (!nif.GetShapeTransformSkinToBone(shape, bones[b], skinToBone)) continue;
+            var boneGlobal = new MatTransform();
+            if (_skeleton != null && _skeleton.GetNodeTransformToGlobal(bones[b], boneGlobal)
+                || nif.GetNodeTransformToGlobal(bones[b], boneGlobal) && !IsOrigin(boneGlobal)
+                || _boneGlobals.TryGetValue(bones[b], out boneGlobal!))
+                toGlobal[b] = boneGlobal.ComposeTransforms(skinToBone);
+        }
+        if (toGlobal.All(t => t == null)) return null;
+
+        var vertData = AsTriShape(shape).vertData;
+        if (vertData.Count != vertexCount) return null;
+        var weights = new float[vertexCount * 4];
+        var ids = new byte[vertexCount * 4];
+        for (var i = 0; i < vertexCount; i++)
+        {
+            var d = vertData[i];
+            d.weights.CopyTo(weights, i * 4);
+            d.weightBones.CopyTo(ids, i * 4);
+        }
+        return new Skinning(toGlobal, weights, ids);
+    }
+
+    /// <summary>nifly hands shapes back as the NiShape base; a BSTriShape view of the same object reads its vertex data.</summary>
+    private static BSTriShape AsTriShape(NiShape shape)
+    {
+        const System.Reflection.BindingFlags any = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance
+                                                  | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+        var handle = (System.Runtime.InteropServices.HandleRef)typeof(NiShape).GetMethod("getCPtr", any)!.Invoke(null, new object[] { shape })!;
+        var ctor = typeof(BSTriShape).GetConstructor(any, new[] { typeof(IntPtr), typeof(bool) })!;
+        return (BSTriShape)ctor.Invoke(new object[] { handle.Handle, false });
+    }
+
+    private static void Skin(Skinning skin, int i, Vector3 v, Vector3? normal, float[] pos, float[] nrm)
+    {
+        float px = 0, py = 0, pz = 0, nx = 0, ny = 0, nz = 0, total = 0;
+        for (var k = 0; k < 4; k++)
+        {
+            var w = skin.Weights[i * 4 + k];
+            if (w <= 0) continue;
+            var b = skin.Bones[i * 4 + k];
+            if (b >= skin.BoneToGlobal.Length || skin.BoneToGlobal[b] is not { } m) continue;
+            var p = m.ApplyTransform(v);
+            px += p.x * w; py += p.y * w; pz += p.z * w;
+            if (normal != null)
+            {
+                var d = m.ApplyTransformToDir(normal);
+                nx += d.x * w; ny += d.y * w; nz += d.z * w;
+            }
+            total += w;
+        }
+        if (total <= 0)
+        {
+            var m = skin.BoneToGlobal.First(t => t != null)!;
+            var p = m.ApplyTransform(v);
+            px = p.x; py = p.y; pz = p.z; total = 1;
+        }
+        pos[i * 3] = px / total; pos[i * 3 + 1] = py / total; pos[i * 3 + 2] = pz / total;
+        nrm[i * 3] = nx; nrm[i * 3 + 1] = ny; nrm[i * 3 + 2] = nz;
+    }
+
+    private (float X, float Y, float Z) SkeletonToBodyShift()
+    {
+        if (_skeleton == null) return default;
+        foreach (var bone in new[] { "NPC Neck [Neck]", "NPC Head [Head]", "NPC Spine2 [Spn2]" })
+        {
+            var fromSkeleton = new MatTransform();
+            if (_boneGlobals.TryGetValue(bone, out var body) && _skeleton.GetNodeTransformToGlobal(bone, fromSkeleton))
+                return (body.translation.x - fromSkeleton.translation.x,
+                        body.translation.y - fromSkeleton.translation.y,
+                        body.translation.z - fromSkeleton.translation.z);
+        }
+        return default;
+    }
+
     /// <summary>The game only swaps in the skin texture set on shapes using the skin-tint shader.</summary>
-    private static bool IsSkinShader(NifFile nif, NiShape shape)
+    private static bool IsSkinShader(NifFile nif, NiShape shape) => ShaderType(nif, shape) == 5; // BSLSP_SKINTINT
+
+    private static int ShaderType(NifFile nif, NiShape shape)
     {
         try
         {
             var shader = nif.GetShader(shape);
-            return shader != null && shader.GetShaderType() == 5; // BSLSP_SKINTINT
+            return shader == null ? -1 : (int)shader.GetShaderType();
         }
         catch
         {
-            return false;
+            return -1;
         }
+    }
+
+    /// <summary>The hair colour on the winning NPC record, which the game multiplies into hair-tint shapes.</summary>
+    private float[]? HairTintFor(NpcEntry npc)
+    {
+        if (!_cache.TryResolve<INpcGetter>(npc.FormKey, out var record)) return null;
+        if (record.HairColor.IsNull || !_cache.TryResolve<IColorRecordGetter>(record.HairColor.FormKey, out var color)) return null;
+        return new[] { color.Color.R / 255f, color.Color.G / 255f, color.Color.B / 255f };
     }
 
     /// <summary>
@@ -263,10 +412,11 @@ public sealed class NpcModelBuilder
         return true;
     }
 
-    private static MeshPart? ReadShape(NifFile nif, NifFile? skeleton, NiShape shape, string label, bool isPiercing, string? skinDiffuse)
+    private MeshPart? ReadShape(NifFile nif, NiShape shape, string label, bool isPiercing, string? skinDiffuse, vectorVector3? thinVerts)
     {
         var verts = nif.GetVertsForShape(shape);
         if (verts == null || verts.Count == 0) return null;
+        if (thinVerts != null && thinVerts.Count != verts.Count) thinVerts = null;
         var normals = nif.GetNormalsForShape(shape);
         var uvs = nif.GetUvsForShape(shape);
         var tris = new vectorTriangle();
@@ -274,7 +424,8 @@ public sealed class NpcModelBuilder
 
         // Skinned shapes store vertices in their own bind space; this brings each into the
         // skeleton space every body part and head share, which is how Outfit Studio lines them up.
-        var global = SkinToGlobal(nif, skeleton, shape) ?? shape.transform;
+        var global = SkinToGlobal(nif, shape) ?? shape.transform;
+        var skin = SkinningFor(nif, shape, verts.Count);
 
         var n = verts.Count;
         var pos = new float[n * 3];
@@ -282,12 +433,25 @@ public sealed class NpcModelBuilder
         var uv = new float[n * 2];
         for (var i = 0; i < n; i++)
         {
-            var p = global.ApplyTransform(verts[i]);
-            pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z;
-            if (normals != null && normals.Count == n)
+            var v = verts[i];
+            if (thinVerts != null)
             {
-                var d = global.ApplyTransformToDir(normals[i]);
-                nrm[i * 3] = d.x; nrm[i * 3 + 1] = d.y; nrm[i * 3 + 2] = d.z;
+                var t = thinVerts[i];
+                v = new Vector3(t.x + (v.x - t.x) * _weight, t.y + (v.y - t.y) * _weight, t.z + (v.z - t.z) * _weight);
+            }
+            if (skin != null)
+            {
+                Skin(skin, i, v, normals != null && normals.Count == n ? normals[i] : null, pos, nrm);
+            }
+            else
+            {
+                var p = global.ApplyTransform(v);
+                pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z;
+                if (normals != null && normals.Count == n)
+                {
+                    var d = global.ApplyTransformToDir(normals[i]);
+                    nrm[i * 3] = d.x; nrm[i * 3 + 1] = d.y; nrm[i * 3 + 2] = d.z;
+                }
             }
             if (uvs != null && uvs.Count == n)
             {
@@ -316,6 +480,7 @@ public sealed class NpcModelBuilder
             DiffusePath = string.IsNullOrWhiteSpace(diffuse) ? null : diffuse,
             IsPiercing = isPiercing,
             AlphaTest = alphaTest,
+            Tint = ShaderType(nif, shape) == 6 ? _hairTint : null, // BSLSP_HAIRTINT
             NormalsComputed = computed,
         };
     }
