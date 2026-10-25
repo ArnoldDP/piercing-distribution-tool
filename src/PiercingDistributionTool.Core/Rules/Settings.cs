@@ -23,6 +23,8 @@ public sealed class ToolSettings
     public bool MergeIntoBody { get; set; } = true;
     /// <summary>Drop cube-map reflections from merged piercings; reflective shaders crash inside a skin addon.</summary>
     public bool StripReflections { get; set; } = true;
+    /// <summary>Copy piercings' BodySlide morphs into the merged morph file so they follow OBody/RaceMenu shapes.</summary>
+    public bool PiercingMorphs { get; set; } = true;
     public string? DataFolder { get; set; }
     public string OutputPluginName { get; set; } = "PiercingDistribution.esp";
     public string? OutputFolder { get; set; }

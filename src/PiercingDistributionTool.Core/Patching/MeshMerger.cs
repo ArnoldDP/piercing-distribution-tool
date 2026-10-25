@@ -26,12 +26,14 @@ public sealed class MeshMerger
     public List<string> Problems { get; } = new();
 
     private readonly bool _stripReflections;
+    private readonly bool _piercingMorphs;
 
-    public MeshMerger(AssetResolver assets, string outputRoot, bool stripReflections)
+    public MeshMerger(AssetResolver assets, string outputRoot, bool stripReflections, bool piercingMorphs = true)
     {
         _assets = assets;
         _outputRoot = outputRoot;
         _stripReflections = stripReflections;
+        _piercingMorphs = piercingMorphs;
         _tempFolder = Path.Combine(Path.GetTempPath(), "PiercingDistributionTool");
         Directory.CreateDirectory(_tempFolder);
     }
@@ -113,7 +115,7 @@ public sealed class MeshMerger
                         if (piece.AlternateTextures.TryGetValue(name, out var textures)) ApplyTextures(nif, clone, textures);
                         if (_stripReflections) StripReflections(nif, clone);
                     }
-                    if (weight is "" or "_1" && ReadTri(src) is { } pTri)
+                    if (_piercingMorphs && weight is "" or "_1" && ReadTri(src) is { } pTri)
                     {
                         tri ??= new TriFile();
                         tri.Absorb(pTri, n => renames.TryGetValue(n, out var r) ? r : n);

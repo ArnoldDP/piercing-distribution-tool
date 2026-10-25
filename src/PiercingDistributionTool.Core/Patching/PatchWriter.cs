@@ -30,7 +30,7 @@ public static class PatchWriter
         var folder = settings.OutputFolder ?? session.DataFolder;
         Directory.CreateDirectory(folder);
 
-        var merger = settings.MergeIntoBody ? new MeshMerger(new Assets.AssetResolver(session.DataFolder), folder, settings.StripReflections) : null;
+        var merger = settings.MergeIntoBody ? new MeshMerger(new Assets.AssetResolver(session.DataFolder), folder, settings.StripReflections, settings.PiercingMorphs) : null;
         var problems = new List<string>();
         var addonOverrides = new Dictionary<FormKey, ArmorAddon>();
         var skins = new Dictionary<(FormKey Base, string Set), Armor>();
