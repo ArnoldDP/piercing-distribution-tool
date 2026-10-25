@@ -184,6 +184,9 @@ public partial class MainWindow : Window
                        + (row.Npc.SkinFromRace ? " (from race)" : " (WNAM)")
                        + $" · winning record from {row.Npc.WinningPlugin}";
             if (row.Npc.SkipReason != null) info += $"\nSkipped: {row.Npc.SkipReason}.";
+            if (set != null && _session != null)
+                foreach (var warning in SlotCheck.Conflicts(_session.LinkCache, row.Npc, set))
+                    info += "\n⚠ " + warning;
             if (model.MissingPiercings.Count > 0)
                 info += $"\n{model.MissingPiercings.Count} piercing mesh(es) don't exist, so they won't show here or in game. "
                         + "If the piercing mod has a BodySlide project, build it in BodySlide first: "
@@ -405,6 +408,20 @@ public partial class MainWindow : Window
         {
             Status("Nothing to write: no NPC has a set. Pick an NPC and choose a set under This NPC.");
             return;
+        }
+        var conflicts = assignments
+            .Select(a => (a.Npc, Warnings: SlotCheck.Conflicts(_session.LinkCache, a.Npc, a.Set)))
+            .Where(x => x.Warnings.Count > 0)
+            .ToList();
+        if (conflicts.Count > 0)
+        {
+            var lines = conflicts.Take(12).Select(c => $"{c.Npc.Display}: {c.Warnings[0]}");
+            var more = conflicts.Count > 12 ? $"\n…and {conflicts.Count - 12} more." : "";
+            if (MessageBox.Show(this,
+                    $"{conflicts.Count} NPC(s) have piercings that clash with a slot already in use:\n\n"
+                    + string.Join("\n", lines) + more + "\n\nWrite the patch anyway?",
+                    "Slot conflicts", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                return;
         }
         WriteButton.IsEnabled = false;
         Status($"Writing {assignments.Count} NPCs…");

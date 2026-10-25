@@ -40,6 +40,13 @@ public static class PatchWriter
                     var fk = FormKey.Factory(addon);
                     if (skin.Armature.All(a => a.FormKey != fk))
                         skin.Armature.Add(fk);
+                    // The engine only draws an addon in slots its armor claims, so the skin has to
+                    // claim the piercing's slots too.
+                    if (cache.TryResolve<IArmorAddonGetter>(fk, out var piece) && SlotCheck.SlotsOf(piece) is var slots and not 0)
+                    {
+                        skin.BodyTemplate ??= new BodyTemplate();
+                        skin.BodyTemplate.FirstPersonFlags |= slots;
+                    }
                 }
                 skins[(baseKey, set.Name)] = skin;
             }
