@@ -136,6 +136,11 @@
                                 <TextBlock TextWrapping="Wrap"
                                            Text="Bake piercings into the body mesh (hidden under body armor; rewrite after every BodySlide build)"/>
                             </CheckBox>
+                            <CheckBox x:Name="StripReflectionsBox" Margin="18,4,0,0" Checked="OnOutputChanged" Unchecked="OnOutputChanged"
+                                      IsEnabled="{Binding IsChecked, ElementName=MergeBox}">
+                                <TextBlock TextWrapping="Wrap"
+                                           Text="Remove reflections from baked piercings (reflective shaders crash in body meshes)"/>
+                            </CheckBox>
                             <Button Content="Write patch" Margin="0,10,0,0" Padding="0,6" FontWeight="SemiBold"
                                     Click="OnWritePatch" x:Name="WriteButton" IsEnabled="False"/>
                         </StackPanel>

@@ -9,6 +9,12 @@ namespace PiercingDistributionTool.Core.Patching;
 /// and one morph file holding the body's and the piercings' morphs so OBody/RaceMenu reshape the
 /// piercings with the body. Both halves of a weighted pair (_0/_1) are merged the same way.
 /// </summary>
+/// <summary>
+/// One piercing mesh to merge, with the texture sets its armor addon swaps onto named shapes
+/// (shape name -> texture paths by BSShaderTextureSet slot, empty where the set leaves a slot alone).
+/// </summary>
+public sealed record PiercingMesh(string Path, IReadOnlyDictionary<string, string[]> AlternateTextures);
+
 public sealed class MeshMerger
 {
     private readonly AssetResolver _assets;
@@ -19,10 +25,13 @@ public sealed class MeshMerger
     public int MeshesWritten { get; private set; }
     public List<string> Problems { get; } = new();
 
-    public MeshMerger(AssetResolver assets, string outputRoot)
+    private readonly bool _stripReflections;
+
+    public MeshMerger(AssetResolver assets, string outputRoot, bool stripReflections)
     {
         _assets = assets;
         _outputRoot = outputRoot;
+        _stripReflections = stripReflections;
         _tempFolder = Path.Combine(Path.GetTempPath(), "PiercingDistributionTool");
         Directory.CreateDirectory(_tempFolder);
     }
@@ -32,9 +41,10 @@ public sealed class MeshMerger
     /// piercing meshes and returns the merged mesh's path in the same form, or null on failure.
     /// <paramref name="outBase"/> is the merged file's path under meshes\ without the _0/_1 suffix.
     /// </summary>
-    public string? Merge(string body, IReadOnlyList<string> piercings, string outBase)
+    public string? Merge(string body, IReadOnlyList<PiercingMesh> piercings, string outBase)
     {
-        var key = body + "|" + string.Join("|", piercings);
+        var key = body + "|" + string.Join("|", piercings.Select(p =>
+            p.Path + ":" + string.Join(";", p.AlternateTextures.Select(kv => kv.Key + "=" + string.Join(",", kv.Value)))));
         if (_done.TryGetValue(key, out var cached)) return cached;
 
         string? result = null;
@@ -61,8 +71,9 @@ public sealed class MeshMerger
                 var physics = ExtraStrings(nif, PhysicsLink).FirstOrDefault();
                 var bodyHasPhysics = physics != null;
 
-                foreach (var piercing in piercings)
+                foreach (var piece in piercings)
                 {
+                    var piercing = piece.Path;
                     var pPair = WeightPair(piercing);
                     var pPath = pPair is { } pp ? pp + (weight == "" ? "_1" : weight) + ".nif" : piercing;
                     using var src = Load(pPath) ?? (pPair is { } pp2 ? Load(pp2 + "_1.nif") : null);
@@ -97,7 +108,10 @@ public sealed class MeshMerger
                             return Remember(key, null);
                         }
                         var clone = nif.CloneShape(shape, unique, src);
-                        if (clone != null) TagAsBody(nif, clone);
+                        if (clone == null) continue;
+                        TagAsBody(nif, clone);
+                        if (piece.AlternateTextures.TryGetValue(name, out var textures)) ApplyTextures(nif, clone, textures);
+                        if (_stripReflections) StripReflections(nif, clone);
                     }
                     if (weight is "" or "_1" && ReadTri(src) is { } pTri)
                     {
@@ -162,6 +176,35 @@ public sealed class MeshMerger
         {
             try { File.Delete(tmp); } catch { }
         }
+    }
+
+    /// <summary>
+    /// An addon's alternate texture set replaces a shape's textures at runtime; merged copies don't go
+    /// through that addon, so the swap is written into the mesh instead.
+    /// </summary>
+    private static void ApplyTextures(NifFile nif, NiShape shape, string[] textures)
+    {
+        for (uint slot = 0; slot < textures.Length; slot++)
+            if (!string.IsNullOrWhiteSpace(textures[slot])) nif.SetTextureSlot(shape, textures[slot], slot);
+    }
+
+    private const uint EnvironmentMapping = 0x80; // SLSF1_Environment_Mapping
+
+    /// <summary>
+    /// Environment-mapped (cube-map reflective) piercings crash the game once they're part of a skin
+    /// addon, presumably in the engine's skin handling. Merged copies drop the reflection and render as
+    /// plain lit metal; the piece worn as normal armor keeps it.
+    /// </summary>
+    private static void StripReflections(NifFile nif, NiShape shape)
+    {
+        var shader = nif.GetShader(shape);
+        if (shader == null || shader.GetBlockName() != "BSLightingShaderProperty") return;
+        var lighting = Cast<BSLightingShaderProperty>(shader);
+        if ((lighting.shaderFlags1 & EnvironmentMapping) == 0) return;
+        lighting.shaderFlags1 &= ~EnvironmentMapping;
+        if (shader.GetShaderType() == 1) shader.SetShaderType(0); // environment map -> default
+        nif.SetTextureSlot(shape, "", 4);
+        nif.SetTextureSlot(shape, "", 5);
     }
 
     private const ushort BodySlot = 32; // SBP_32_BODY

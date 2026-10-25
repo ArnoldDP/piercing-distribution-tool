@@ -30,7 +30,7 @@ public static class PatchWriter
         var folder = settings.OutputFolder ?? session.DataFolder;
         Directory.CreateDirectory(folder);
 
-        var merger = settings.MergeIntoBody ? new MeshMerger(new Assets.AssetResolver(session.DataFolder), folder) : null;
+        var merger = settings.MergeIntoBody ? new MeshMerger(new Assets.AssetResolver(session.DataFolder), folder, settings.StripReflections) : null;
         var problems = new List<string>();
         var addonOverrides = new Dictionary<FormKey, ArmorAddon>();
         var skins = new Dictionary<(FormKey Base, string Set), Armor>();
@@ -133,9 +133,9 @@ public static class PatchWriter
                 var bodyMesh = model?.File?.DataRelativePath.Path;
                 if (model == null || string.IsNullOrEmpty(bodyMesh)) continue;
                 var pierceMeshes = pieces
-                    .Select(p => (female ? p.WorldModel?.Female : p.WorldModel?.Male)?.File?.DataRelativePath.Path)
-                    .Where(p => !string.IsNullOrEmpty(p))
-                    .Select(p => p!)
+                    .Select(p => female ? p.WorldModel?.Female : p.WorldModel?.Male)
+                    .Where(m => !string.IsNullOrEmpty(m?.File?.DataRelativePath.Path))
+                    .Select(m => new PiercingMesh(m!.File!.DataRelativePath.Path, AlternateTextures(cache, m)))
                     .ToList();
                 if (pierceMeshes.Count == 0) continue;
 
@@ -169,6 +169,26 @@ public static class PatchWriter
             made.Add((body.FormKey, copy));
         }
         return true;
+    }
+
+    /// <summary>The addon's alternate texture sets as texture paths by mesh slot, keyed by the shape they replace.</summary>
+    private static IReadOnlyDictionary<string, string[]> AlternateTextures(ILinkCache<ISkyrimMod, ISkyrimModGetter> cache, IModelGetter model)
+    {
+        var result = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        if (model.AlternateTextures == null) return result;
+        foreach (var alt in model.AlternateTextures)
+        {
+            if (string.IsNullOrEmpty(alt.Name) || !cache.TryResolve<ITextureSetGetter>(alt.NewTexture.FormKey, out var set)) continue;
+            string Tex(Mutagen.Bethesda.Plugins.Assets.IAssetLinkGetter? link) =>
+                link?.DataRelativePath.Path is { Length: > 0 } t ? t : "";
+            // BSShaderTextureSet slots: 0 diffuse, 1 normal, 2 glow, 3 height, 4 cube map, 5 env mask, 6 multilayer, 7 backlight/specular.
+            result[alt.Name] = new[]
+            {
+                Tex(set.Diffuse), Tex(set.NormalOrGloss), Tex(set.GlowOrDetailMap), Tex(set.Height),
+                Tex(set.Environment), Tex(set.EnvironmentMaskOrSubsurfaceTint), Tex(set.Multilayer), Tex(set.BacklightMaskOrSpecular),
+            };
+        }
+        return result;
     }
 
     private static string Clean(string s) => new(s.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());

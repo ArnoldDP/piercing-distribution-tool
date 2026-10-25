@@ -32,6 +32,7 @@ public partial class MainWindow : Window
         OutputNameBox.Text = _settings.OutputPluginName;
         OutputFolderBox.Text = _settings.OutputFolder ?? "";
         MergeBox.IsChecked = _settings.MergeIntoBody;
+        StripReflectionsBox.IsChecked = _settings.StripReflections;
         _syncing = false;
         RefreshSetList();
         Closing += (_, _) => { SaveSettings(); _session?.Dispose(); };
@@ -395,6 +396,7 @@ public partial class MainWindow : Window
     {
         if (_syncing) return;
         _settings.MergeIntoBody = MergeBox.IsChecked == true;
+        _settings.StripReflections = StripReflectionsBox.IsChecked == true;
         RebuildPreview();
         var name = OutputNameBox.Text.Trim();
         if (name.Length == 0) name = "PiercingDistribution.esp";
