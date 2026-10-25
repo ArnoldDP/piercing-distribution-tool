@@ -120,6 +120,7 @@ public static class PatchWriter
             .Select(a => a!)
             .ToList();
 
+        var made = new List<(FormKey Original, ArmorAddon Copy)>();
         foreach (var body in bodies)
         {
             var bodyName = Clean(body.EditorID ?? body.FormKey.IDString());
@@ -141,7 +142,19 @@ public static class PatchWriter
                 var sex = female ? "f" : "m";
                 var outBase = Path.Combine("PiercingDistribution", Clean(skin.EditorID!), bodyName + "_" + sex);
                 var mergedMesh = merger.Merge(bodyMesh, pierceMeshes, outBase);
-                if (mergedMesh == null) continue;
+                if (mergedMesh == null)
+                {
+                    // Undo this skin's swaps; the caller adds the piercings as separate addons instead.
+                    mod.ArmorAddons.Remove(copy);
+                    foreach (var (original, done) in made)
+                    {
+                        mod.ArmorAddons.Remove(done);
+                        var at = skin.Armature.FindIndex(l => l.FormKey == done.FormKey);
+                        if (at >= 0) skin.Armature[at] = new FormLink<IArmorAddonGetter>(original);
+                    }
+                    problems.Add($"{skin.EditorID}: merging failed, so its piercings were added as separate addons.");
+                    return false;
+                }
                 model.File = new Mutagen.Bethesda.Plugins.Assets.AssetLink<Mutagen.Bethesda.Skyrim.Assets.SkyrimModelAssetType>(mergedMesh);
                 model.Data = null; // texture hashes described the old mesh
                 changed = true;
@@ -153,6 +166,7 @@ public static class PatchWriter
             }
             var index = skin.Armature.FindIndex(l => l.FormKey == body.FormKey);
             skin.Armature[index] = copy.ToLink();
+            made.Add((body.FormKey, copy));
         }
         return true;
     }

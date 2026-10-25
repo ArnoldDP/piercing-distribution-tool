@@ -57,6 +57,9 @@ public sealed class MeshMerger
 
                 var tri = weight is "" or "_1" ? ReadTri(nif) : null;
                 var names = new HashSet<string>(nif.GetShapes().Select(s => s.name.get()), StringComparer.OrdinalIgnoreCase);
+                // SMP reads one physics config per mesh, matched to shapes by name.
+                var physics = ExtraStrings(nif, PhysicsLink).FirstOrDefault();
+                var bodyHasPhysics = physics != null;
 
                 foreach (var piercing in piercings)
                 {
@@ -66,7 +69,19 @@ public sealed class MeshMerger
                     if (src == null)
                     {
                         Problems.Add($"Couldn't read piercing mesh {pPath}.");
-                        continue;
+                        return Remember(key, null);
+                    }
+                    var piercingPhysics = ExtraStrings(src, PhysicsLink).FirstOrDefault();
+                    if (piercingPhysics != null)
+                    {
+                        if (physics != null)
+                        {
+                            Problems.Add(bodyHasPhysics
+                                ? $"{body} has its own SMP physics, so the SMP piercing {piercing} can't be merged into it."
+                                : $"Two SMP piercings ({piercing} and another) can't share one merged mesh.");
+                            return Remember(key, null);
+                        }
+                        physics = piercingPhysics;
                     }
                     var renames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var shape in src.GetShapes())
@@ -76,6 +91,11 @@ public sealed class MeshMerger
                         for (var i = 2; names.Contains(unique); i++) unique = $"{name}_{i}";
                         names.Add(unique);
                         renames[name] = unique;
+                        if (piercingPhysics != null && unique != name)
+                        {
+                            Problems.Add($"SMP piercing {piercing} has a shape named like one already in the body ({name}); its physics config would no longer match.");
+                            return Remember(key, null);
+                        }
                         nif.CloneShape(shape, unique, src);
                     }
                     if (weight is "" or "_1" && ReadTri(src) is { } pTri)
@@ -87,6 +107,8 @@ public sealed class MeshMerger
 
                 if (tri != null) mergedTri = tri;
                 PointBodyTri(nif, mergedTri != null || HasBodyTri(nif) ? triRel : null);
+                if (physics != null && !bodyHasPhysics)
+                    nif.AddStringExtraDataToNode((int)nif.GetBlockID(nif.GetRootNode()), PhysicsLink, physics);
 
                 var outRel = outBase + weight + ".nif";
                 var outAbs = Path.Combine(_outputRoot, "meshes", outRel);
@@ -141,16 +163,23 @@ public sealed class MeshMerger
         }
     }
 
-    private static IEnumerable<(uint Id, NiStringExtraData Data)> BodyTriBlocks(NifFile nif)
+    private const string PhysicsLink = "HDT Skinned Mesh Physics Object";
+
+    private static IEnumerable<(uint Id, NiStringExtraData Data)> ExtraBlocks(NifFile nif, string name)
     {
         var header = nif.GetHeader();
         for (uint i = 0; i < header.GetNumBlocks(); i++)
         {
             if (header.GetBlockTypeStringById(i) != "NiStringExtraData") continue;
             var data = Cast<NiStringExtraData>(header.GetBlockById(i));
-            if (data.name.get() == "BODYTRI") yield return (i, data);
+            if (data.name.get() == name) yield return (i, data);
         }
     }
+
+    private static IEnumerable<string> ExtraStrings(NifFile nif, string name) =>
+        ExtraBlocks(nif, name).Select(b => b.Data.stringData.get()).Where(v => !string.IsNullOrWhiteSpace(v));
+
+    private static IEnumerable<(uint Id, NiStringExtraData Data)> BodyTriBlocks(NifFile nif) => ExtraBlocks(nif, "BODYTRI");
 
     private static bool HasBodyTri(NifFile nif) => BodyTriBlocks(nif).Any();
 
