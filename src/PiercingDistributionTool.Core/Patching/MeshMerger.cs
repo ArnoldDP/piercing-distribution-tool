@@ -96,7 +96,8 @@ public sealed class MeshMerger
                             Problems.Add($"SMP piercing {piercing} has a shape named like one already in the body ({name}); its physics config would no longer match.");
                             return Remember(key, null);
                         }
-                        nif.CloneShape(shape, unique, src);
+                        var clone = nif.CloneShape(shape, unique, src);
+                        if (clone != null) TagAsBody(nif, clone);
                     }
                     if (weight is "" or "_1" && ReadTri(src) is { } pTri)
                     {
@@ -161,6 +162,30 @@ public sealed class MeshMerger
         {
             try { File.Delete(tmp); } catch { }
         }
+    }
+
+    private const ushort BodySlot = 32; // SBP_32_BODY
+
+    /// <summary>
+    /// A skinned shape's partitions carry the body slot they belong to, and the game only draws the
+    /// partitions whose slot the addon fills. Piercing shapes come tagged with their own slot (56, 36…),
+    /// which a slot-32 body addon never fills, so they'd be invisible until retagged as body.
+    /// </summary>
+    private static void TagAsBody(NifFile nif, NiShape shape)
+    {
+        var parts = new NiVectorBSDismemberSkinInstancePartitionInfo();
+        var triParts = new vectorint();
+        if (!nif.GetShapePartitions(shape, parts, triParts)) return;
+        var retagged = new vectorPartitionInfo();
+        var changed = false;
+        foreach (var part in parts.items())
+        {
+            changed |= part.partID != BodySlot;
+            retagged.Add(new BSDismemberSkinInstance.PartitionInfo { flags = part.flags, partID = BodySlot });
+        }
+        if (!changed) return;
+        parts.SetItems(retagged);
+        nif.SetShapePartitions(shape, parts, triParts);
     }
 
     private const string PhysicsLink = "HDT Skinned Mesh Physics Object";
