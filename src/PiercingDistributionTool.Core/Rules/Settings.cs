@@ -19,6 +19,8 @@ public sealed class DistributionRules
 
 public sealed class ToolSettings
 {
+    /// <summary>Bake piercings into a copy of the body mesh so body armor hides them with the body.</summary>
+    public bool MergeIntoBody { get; set; } = true;
     public string? DataFolder { get; set; }
     public string OutputPluginName { get; set; } = "PiercingDistribution.esp";
     public string? OutputFolder { get; set; }

@@ -132,6 +132,10 @@
                             <TextBlock Text="Folder (blank = Data folder, which lands in MO2's overwrite)" Margin="0,6,0,0"
                                        TextWrapping="Wrap"/>
                             <TextBox x:Name="OutputFolderBox" LostFocus="OnOutputChanged"/>
+                            <CheckBox x:Name="MergeBox" Margin="0,8,0,0" Checked="OnOutputChanged" Unchecked="OnOutputChanged">
+                                <TextBlock TextWrapping="Wrap"
+                                           Text="Bake piercings into the body mesh (hidden under body armor; rewrite after every BodySlide build)"/>
+                            </CheckBox>
                             <Button Content="Write patch" Margin="0,10,0,0" Padding="0,6" FontWeight="SemiBold"
                                     Click="OnWritePatch" x:Name="WriteButton" IsEnabled="False"/>
                         </StackPanel>

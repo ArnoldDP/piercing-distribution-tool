@@ -31,6 +31,7 @@ public partial class MainWindow : Window
         DataFolderBox.Text = _settings.DataFolder ?? "";
         OutputNameBox.Text = _settings.OutputPluginName;
         OutputFolderBox.Text = _settings.OutputFolder ?? "";
+        MergeBox.IsChecked = _settings.MergeIntoBody;
         _syncing = false;
         RefreshSetList();
         Closing += (_, _) => { SaveSettings(); _session?.Dispose(); };
@@ -184,7 +185,7 @@ public partial class MainWindow : Window
                        + (row.Npc.SkinFromRace ? " (from race)" : " (WNAM)")
                        + $" · winning record from {row.Npc.WinningPlugin}";
             if (row.Npc.SkipReason != null) info += $"\nSkipped: {row.Npc.SkipReason}.";
-            if (set != null && _session != null)
+            if (set != null && _session != null && !_settings.MergeIntoBody)
                 foreach (var warning in SlotCheck.Conflicts(_session.LinkCache, row.Npc, set))
                     info += "\n⚠ " + warning;
             if (model.MissingPiercings.Count > 0)
@@ -392,6 +393,9 @@ public partial class MainWindow : Window
 
     private void OnOutputChanged(object sender, RoutedEventArgs e)
     {
+        if (_syncing) return;
+        _settings.MergeIntoBody = MergeBox.IsChecked == true;
+        RebuildPreview();
         var name = OutputNameBox.Text.Trim();
         if (name.Length == 0) name = "PiercingDistribution.esp";
         if (!name.EndsWith(".esp", StringComparison.OrdinalIgnoreCase)) name += ".esp";
@@ -409,7 +413,7 @@ public partial class MainWindow : Window
             Status("Nothing to write: no NPC has a set. Pick an NPC and choose a set under This NPC.");
             return;
         }
-        var conflicts = assignments
+        var conflicts = _settings.MergeIntoBody ? new() : assignments
             .Select(a => (a.Npc, Warnings: SlotCheck.Conflicts(_session.LinkCache, a.Npc, a.Set)))
             .Where(x => x.Warnings.Count > 0)
             .ToList();
@@ -431,9 +435,12 @@ public partial class MainWindow : Window
             var result = await Task.Run(() => PatchWriter.Write(session, assignments, _settings));
             SaveSettings();
             Status($"Wrote {result.Path}: {result.NpcCount} NPCs, {result.SkinCount} skins"
+                   + (result.MergedMeshes > 0 ? $", {result.MergedMeshes} merged body meshes" : "")
                    + (result.AddonOverrides > 0 ? $", {result.AddonOverrides} addon race fixes" : "")
                    + (result.Light ? ", flagged as a light plugin." : ".")
-                   + " Re-run after regenerating your NPC appearance patch.");
+                   + (result.Problems.Count > 0 ? $" {result.Problems.Count} problem(s): " + string.Join(" ", result.Problems.Take(3)) : "")
+                   + " Re-run after regenerating your NPC appearance patch"
+                   + (result.MergedMeshes > 0 ? " or rebuilding bodies or piercings in BodySlide." : "."));
         }
         catch (Exception ex)
         {
