@@ -30,6 +30,13 @@ public static class PatchWriter
         var folder = settings.OutputFolder ?? session.DataFolder;
         Directory.CreateDirectory(folder);
 
+        // Merged meshes from earlier runs are cleared first. A set can keep its name while its pieces
+        // change, and a run doesn't produce every file every time (a body may lack its _0 half), so
+        // leftovers could pair a new _1 mesh with an old _0 or morph file of different shapes, which
+        // crashes the game when the body is shown.
+        var mergedFolder = Path.Combine(folder, "meshes", "PiercingDistribution");
+        if (Directory.Exists(mergedFolder)) Directory.Delete(mergedFolder, recursive: true);
+
         var merger = settings.MergeIntoBody ? new MeshMerger(new Assets.AssetResolver(session.DataFolder), folder, settings.StripReflections, settings.PiercingMorphs) : null;
         var problems = new List<string>();
         var addonOverrides = new Dictionary<FormKey, ArmorAddon>();
