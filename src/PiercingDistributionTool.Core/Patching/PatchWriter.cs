@@ -43,13 +43,15 @@ public static class PatchWriter
             skin.DeepCopyIn(baseSkin, new Armor.TranslationMask(defaultOn: true) { EditorID = false });
             skins[(baseKey, set.Name)] = skin;
 
-            var merged = merger != null && MergeIntoBody(cache, mod, merger, skin, set, group.Select(a => a.Npc).ToList(), problems);
-            if (!merged)
+            var separate = merger == null
+                ? set.ArmorAddons.ToList()
+                : MergeIntoBody(cache, mod, merger, skin, set, group.Select(a => a.Npc).ToList(), problems);
+            if (separate.Count > 0)
             {
-                AddAsSeparateAddons(cache, skin, set);
+                AddAsSeparateAddons(cache, skin, separate);
                 // Each piercing addon must list the NPC's race, or the engine skips it at render time.
                 foreach (var npc in group.Select(a => a.Npc))
-                foreach (var addon in set.ArmorAddons)
+                foreach (var addon in separate)
                     EnsureRace(cache, mod, addonOverrides, FormKey.Factory(addon), npc.RaceKey);
             }
 
@@ -71,9 +73,9 @@ public static class PatchWriter
             merger?.MeshesWritten ?? 0, problems);
     }
 
-    private static void AddAsSeparateAddons(ILinkCache<ISkyrimMod, ISkyrimModGetter> cache, Armor skin, PiercingSet set)
+    private static void AddAsSeparateAddons(ILinkCache<ISkyrimMod, ISkyrimModGetter> cache, Armor skin, IEnumerable<string> addons)
     {
-        foreach (var addon in set.ArmorAddons)
+        foreach (var addon in addons)
         {
             var fk = FormKey.Factory(addon);
             if (skin.Armature.All(a => a.FormKey != fk))
@@ -89,10 +91,11 @@ public static class PatchWriter
     }
 
     /// <summary>
-    /// Replaces each body addon the NPCs would wear with a copy pointing at a merged mesh. Returns
-    /// false (and the caller falls back to separate addons) when there is no body addon to merge into.
+    /// Replaces each body addon the NPCs would wear with a copy pointing at a merged mesh, and returns
+    /// the piercing addons that must stay separate instead: SMP pieces always (their physics bones and
+    /// collision shapes crash the game inside a body mesh), and every piece when merging fails.
     /// </summary>
-    private static bool MergeIntoBody(ILinkCache<ISkyrimMod, ISkyrimModGetter> cache, SkyrimMod mod, MeshMerger merger,
+    private static List<string> MergeIntoBody(ILinkCache<ISkyrimMod, ISkyrimModGetter> cache, SkyrimMod mod, MeshMerger merger,
         Armor skin, PiercingSet set, List<NpcEntry> npcs, List<string> problems)
     {
         var races = new HashSet<FormKey>();
@@ -111,14 +114,17 @@ public static class PatchWriter
         if (bodies.Count == 0)
         {
             problems.Add($"{skin.EditorID}: no body addon for these NPCs' race, so the piercings were added as separate addons.");
-            return false;
+            return set.ArmorAddons.ToList();
         }
 
-        var pieces = set.ArmorAddons
+        var all = set.ArmorAddons
             .Select(k => FormKey.TryFactory(k) is { } fk && cache.TryResolve<IArmorAddonGetter>(fk, out var a) ? a : null)
             .Where(a => a != null)
             .Select(a => a!)
             .ToList();
+        var separate = all.Where(merger.IsPhysicsPiece).Select(a => a.FormKey.ToString()).ToList();
+        var pieces = all.Where(a => !separate.Contains(a.FormKey.ToString())).ToList();
+        if (pieces.Count == 0) return separate;
 
         var made = new List<(FormKey Original, ArmorAddon Copy)>();
         foreach (var body in bodies)
@@ -153,7 +159,7 @@ public static class PatchWriter
                         if (at >= 0) skin.Armature[at] = new FormLink<IArmorAddonGetter>(original);
                     }
                     problems.Add($"{skin.EditorID}: merging failed, so its piercings were added as separate addons.");
-                    return false;
+                    return set.ArmorAddons.ToList();
                 }
                 model.File = new Mutagen.Bethesda.Plugins.Assets.AssetLink<Mutagen.Bethesda.Skyrim.Assets.SkyrimModelAssetType>(mergedMesh);
                 model.Data = null; // texture hashes described the old mesh
@@ -168,7 +174,7 @@ public static class PatchWriter
             skin.Armature[index] = copy.ToLink();
             made.Add((body.FormKey, copy));
         }
-        return true;
+        return separate;
     }
 
     private static string Clean(string s) => new(s.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());
