@@ -139,31 +139,6 @@ public sealed class MeshMerger
 
     private string? Remember(string key, string? value) => _done[key] = value;
 
-    private readonly Dictionary<string, bool> _physics = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// True for SMP/HDT pieces: meshes with a physics link or "Virtual" collision shapes. Inside a body
-    /// mesh their physics-only bones and proxies crashed the game, so they stay separate addons.
-    /// </summary>
-    public bool IsPhysicsPiece(Mutagen.Bethesda.Skyrim.IArmorAddonGetter addon)
-    {
-        foreach (var model in new[] { addon.WorldModel?.Female, addon.WorldModel?.Male })
-        {
-            var path = model?.File?.DataRelativePath.Path;
-            if (string.IsNullOrEmpty(path)) continue;
-            if (!_physics.TryGetValue(path, out var hit))
-            {
-                var pair = WeightPair(path);
-                using var nif = Load(pair != null ? pair + "_1.nif" : path) ?? Load(path);
-                hit = nif != null && (ExtraStrings(nif, PhysicsLink).Any()
-                    || nif.GetShapes().Any(s => s.name.get().StartsWith("Virtual", StringComparison.OrdinalIgnoreCase)));
-                _physics[path] = hit;
-            }
-            if (hit) return true;
-        }
-        return false;
-    }
-
     /// <summary>"x\body_1.nif" or "x\body_0.nif" -> "x\body"; anything else isn't a weighted pair.</summary>
     private static string? WeightPair(string path) =>
         path.EndsWith("_1.nif", StringComparison.OrdinalIgnoreCase) || path.EndsWith("_0.nif", StringComparison.OrdinalIgnoreCase)
